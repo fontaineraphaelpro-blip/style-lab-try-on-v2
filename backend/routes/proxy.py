@@ -128,7 +128,7 @@ async def serve_widget_js(request: Request):
         extractProductId() {
             const meta = document.querySelector('meta[property="og:url"]');
             if (meta) {
-                const match = meta.content.match(/products\/([^?]+)/);
+                const match = meta.content.match(/products\\/([^?]+)/);
                 return match ? match[1] : null;
             }
             return null;
