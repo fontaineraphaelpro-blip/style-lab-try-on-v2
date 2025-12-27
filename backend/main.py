@@ -58,14 +58,8 @@ async def lifespan(app: FastAPI):
         print("   Database: Not configured")
     
     # Initialiser la DB (avec gestion d'erreur)
-    try:
-        init_db()
-        print("✅ Database initialized")
-    except Exception as e:
-        print(f"⚠️  Database initialization failed: {e}")
-        print("   App will continue but database features may not work")
-        # Ne pas faire crash l'app
-        pass
+    # init_db() gère ses propres erreurs et ne fait pas crash
+    init_db()
     
     # Vérifier les credentials Shopify
     if not SHOPIFY_API_KEY or not SHOPIFY_API_SECRET:

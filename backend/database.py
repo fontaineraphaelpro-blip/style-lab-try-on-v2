@@ -177,6 +177,8 @@ def init_db():
         print(f"❌ Database initialization failed: {e}")
         # Ne pas faire crash l'app si la DB n'est pas accessible
         print("⚠️  Continuing without database...")
+        # Ne PAS propager l'exception - l'app doit démarrer quand même
+        return
 
 
 def get_db():
