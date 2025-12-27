@@ -121,12 +121,17 @@ async def log_requests(request: Request, call_next):
     """
     start_time = datetime.utcnow()
     
+    # Log toutes les requêtes importantes
+    path = request.url.path
+    if path.startswith("/app") or path.startswith("/auth") or path.startswith("/api/admin"):
+        print(f"📥 {request.method} {path} - Query: {dict(request.query_params)}")
+    
     response = await call_next(request)
     
     duration = (datetime.utcnow() - start_time).total_seconds() * 1000
     
-    if ENVIRONMENT == "development":
-        print(f"{request.method} {request.url.path} - {response.status_code} - {duration:.0f}ms")
+    if path.startswith("/app") or path.startswith("/auth") or path.startswith("/api/admin"):
+        print(f"📤 {request.method} {path} - {response.status_code} - {duration:.0f}ms")
     
     return response
 
