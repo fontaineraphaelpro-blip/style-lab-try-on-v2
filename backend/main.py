@@ -171,28 +171,56 @@ frontend_path = Path(__file__).parent.parent / "frontend"
 # ==========================================
 
 @app.get("/app")
-async def serve_admin_app():
+async def serve_admin_app(request: Request):
     """
     Sert la page admin principale.
     """
     index_path = frontend_path / "index.html"
+    
+    if ENVIRONMENT == "development":
+        print(f"📄 Serving admin app from: {index_path}")
+        print(f"   SHOPIFY_API_KEY: {'present' if SHOPIFY_API_KEY else 'missing'}")
+    
     if index_path.exists():
         content = index_path.read_text(encoding="utf-8")
         # Remplacer les placeholders si nécessaire
         content = content.replace("{{ api_key }}", SHOPIFY_API_KEY or "")
         return HTMLResponse(content=content)
+    
+    if ENVIRONMENT == "development":
+        print(f"❌ Frontend not found at: {index_path}")
     return JSONResponse({"error": "Frontend not found"}, status_code=404)
 
 
 @app.get("/app/{path:path}")
-async def serve_admin_static(path: str):
+async def serve_admin_static(path: str, request: Request):
     """
     Sert les fichiers statiques du frontend (CSS, JS, etc.).
     """
     file_path = frontend_path / path
+    
+    # Log pour debug
+    if ENVIRONMENT == "development":
+        print(f"📁 Static file request: /app/{path} -> {file_path}")
+    
     if file_path.exists() and file_path.is_file():
-        return FileResponse(str(file_path))
-    return JSONResponse({"error": "File not found"}, status_code=404)
+        # Déterminer le content-type
+        content_type = None
+        if path.endswith('.css'):
+            content_type = 'text/css'
+        elif path.endswith('.js'):
+            content_type = 'application/javascript'
+        elif path.endswith('.html'):
+            content_type = 'text/html'
+        
+        return FileResponse(
+            str(file_path),
+            media_type=content_type
+        )
+    
+    if ENVIRONMENT == "development":
+        print(f"❌ File not found: {file_path}")
+    return JSONResponse({"error": "File not found", "path": path}, status_code=404)
 
 
 # ==========================================

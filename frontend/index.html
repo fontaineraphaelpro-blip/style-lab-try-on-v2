@@ -4,22 +4,43 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VTON AI</title>
-    <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+    <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key="{{ api_key }}"></script>
     <script>
-        // Initialiser App Bridge si on est dans une app embarquée
-        const urlParams = new URLSearchParams(window.location.search);
-        const shop = urlParams.get('shop');
-        const host = urlParams.get('host');
-        const apiKey = "{{ api_key }}";
-        
-        if (shop && host && apiKey && window.AppBridge) {
-            window.app = window.AppBridge.default({
-                apiKey: apiKey,
-                host: host,
-                shop: shop
-            });
-            console.log("✅ App Bridge initialized");
-        }
+        // Initialiser App Bridge après chargement complet
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const shop = urlParams.get('shop');
+            const host = urlParams.get('host');
+            const apiKey = "{{ api_key }}";
+            
+            console.log("🔍 App Bridge init - shop:", shop, "host:", host, "apiKey:", apiKey ? "present" : "missing");
+            
+            function initAppBridge() {
+                if (window.AppBridge && shop && host && apiKey) {
+                    try {
+                        window.app = window.AppBridge.default({
+                            apiKey: apiKey,
+                            host: host,
+                            shop: shop
+                        });
+                        console.log("✅ App Bridge initialized successfully");
+                    } catch (error) {
+                        console.error("❌ App Bridge initialization error:", error);
+                    }
+                } else {
+                    console.warn("⚠️ App Bridge not ready - AppBridge:", !!window.AppBridge, "shop:", shop, "host:", host, "apiKey:", !!apiKey);
+                    // Réessayer après un court délai
+                    setTimeout(initAppBridge, 100);
+                }
+            }
+            
+            // Essayer immédiatement
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initAppBridge);
+            } else {
+                initAppBridge();
+            }
+        })();
     </script>
     <link rel="stylesheet" href="/app/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
