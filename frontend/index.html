@@ -45,8 +45,48 @@
     <link rel="stylesheet" href="/app/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet">
+    <style>
+        /* Fallback pour éviter page blanche */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        .loading-fallback {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #f5f5f5;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .loading-fallback.show {
+            display: flex;
+        }
+    </style>
 </head>
 <body>
+    <div class="loading-fallback" id="loading-fallback">
+        <div style="text-align: center;">
+            <div style="font-size: 24px; margin-bottom: 10px;">⏳ Loading...</div>
+            <div style="color: #666; font-size: 14px;">Initializing App Bridge...</div>
+        </div>
+    </div>
+    <script>
+        // Masquer le fallback une fois que le DOM est chargé
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(function() {
+                const fallback = document.getElementById('loading-fallback');
+                if (fallback) {
+                    fallback.classList.remove('show');
+                }
+            }, 1000);
+        });
+    </script>
 
     <div class="app-container">
         <div id="admin-only-zone">
