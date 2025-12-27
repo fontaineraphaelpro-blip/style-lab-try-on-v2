@@ -22,16 +22,35 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 
 print(f"🔧 Database URL: {DATABASE_URL[:50]}..." if DATABASE_URL else "⚠️ No DATABASE_URL")
 
-# Engine SQLAlchemy
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-    echo=False  # Mettre à True pour debug SQL
-)
+# Engine SQLAlchemy (créé lazy - seulement si DATABASE_URL existe)
+engine = None
+SessionLocal = None
 
-# Session factory (défini plus haut si DATABASE_URL existe)
+def _init_engine():
+    """Initialise l'engine de manière lazy"""
+    global engine, SessionLocal
+    if engine is not None:
+        return engine
+    
+    if not DATABASE_URL:
+        return None
+    
+    try:
+        engine = create_engine(
+            DATABASE_URL,
+            pool_pre_ping=True,
+            pool_size=10,
+            max_overflow=20,
+            pool_recycle=300,
+            echo=False  # Mettre à True pour debug SQL
+        )
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        return engine
+    except Exception as e:
+        print(f"⚠️  Failed to create database engine: {e}")
+        engine = None
+        SessionLocal = None
+        return None
 
 # Base pour les modèles
 Base = declarative_base()
@@ -137,8 +156,17 @@ def init_db():
     """
     Crée toutes les tables dans la base de données.
     """
+    global engine, SessionLocal
+    
     if not DATABASE_URL:
         print("⚠️  DATABASE_URL not set, skipping database initialization")
+        return
+    
+    # Initialiser l'engine de manière lazy
+    _init_engine()
+    
+    if not engine:
+        print("⚠️  Database engine not available, skipping initialization")
         return
     
     try:
