@@ -23,11 +23,15 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 print(f"🔧 Database URL: {DATABASE_URL[:50]}..." if DATABASE_URL else "⚠️ No DATABASE_URL")
 
 # Engine SQLAlchemy
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is required")
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
+    pool_recycle=300,
     echo=False  # Mettre à True pour debug SQL
 )
 
