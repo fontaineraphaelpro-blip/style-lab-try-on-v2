@@ -177,19 +177,23 @@ async def serve_admin_app(request: Request):
     """
     index_path = frontend_path / "index.html"
     
-    if ENVIRONMENT == "development":
-        print(f"📄 Serving admin app from: {index_path}")
-        print(f"   SHOPIFY_API_KEY: {'present' if SHOPIFY_API_KEY else 'missing'}")
+    print(f"📄 Serving admin app from: {index_path}")
+    print(f"   SHOPIFY_API_KEY: {'present' if SHOPIFY_API_KEY else 'missing'}")
+    print(f"   Query params: {dict(request.query_params)}")
     
-    if index_path.exists():
+    if not index_path.exists():
+        print(f"❌ Frontend not found at: {index_path}")
+        return JSONResponse({"error": "Frontend not found"}, status_code=404)
+    
+    try:
         content = index_path.read_text(encoding="utf-8")
         # Remplacer les placeholders si nécessaire
         content = content.replace("{{ api_key }}", SHOPIFY_API_KEY or "")
+        print(f"✅ Serving index.html ({len(content)} bytes)")
         return HTMLResponse(content=content)
-    
-    if ENVIRONMENT == "development":
-        print(f"❌ Frontend not found at: {index_path}")
-    return JSONResponse({"error": "Frontend not found"}, status_code=404)
+    except Exception as e:
+        print(f"❌ Error serving index.html: {e}")
+        return JSONResponse({"error": f"Error serving frontend: {str(e)}"}, status_code=500)
 
 
 @app.get("/app/{path:path}")
@@ -199,28 +203,26 @@ async def serve_admin_static(path: str, request: Request):
     """
     file_path = frontend_path / path
     
-    # Log pour debug
-    if ENVIRONMENT == "development":
-        print(f"📁 Static file request: /app/{path} -> {file_path}")
+    print(f"📁 Static file request: /app/{path} -> {file_path}")
     
-    if file_path.exists() and file_path.is_file():
-        # Déterminer le content-type
-        content_type = None
-        if path.endswith('.css'):
-            content_type = 'text/css'
-        elif path.endswith('.js'):
-            content_type = 'application/javascript'
-        elif path.endswith('.html'):
-            content_type = 'text/html'
-        
-        return FileResponse(
-            str(file_path),
-            media_type=content_type
-        )
-    
-    if ENVIRONMENT == "development":
+    if not file_path.exists() or not file_path.is_file():
         print(f"❌ File not found: {file_path}")
-    return JSONResponse({"error": "File not found", "path": path}, status_code=404)
+        return JSONResponse({"error": "File not found", "path": path}, status_code=404)
+    
+    # Déterminer le content-type
+    content_type = None
+    if path.endswith('.css'):
+        content_type = 'text/css'
+    elif path.endswith('.js'):
+        content_type = 'application/javascript'
+    elif path.endswith('.html'):
+        content_type = 'text/html'
+    
+    print(f"✅ Serving static file: {path} ({content_type})")
+    return FileResponse(
+        str(file_path),
+        media_type=content_type
+    )
 
 
 # ==========================================
