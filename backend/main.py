@@ -107,21 +107,29 @@ app = FastAPI(
 # ==========================================
 
 # CORS (minimal - App Proxy handled by Shopify)
-# Autoriser aussi les requêtes depuis Railway et localhost
-allowed_origins = [
-    "https://*.myshopify.com",
-    "http://localhost:*",
-    "https://*.up.railway.app",
-    "https://*.railway.app"
-] if ENVIRONMENT == "development" else [
-    "https://*.myshopify.com",
-    "https://*.up.railway.app",
-    "https://*.railway.app"
-]
+# FastAPI ne supporte pas les wildcards, donc on utilise une fonction
+def is_allowed_origin(origin: str) -> bool:
+    """Vérifie si l'origine est autorisée"""
+    if not origin:
+        return False
+    
+    # Autoriser localhost en dev
+    if ENVIRONMENT == "development" and ("localhost" in origin or "127.0.0.1" in origin):
+        return True
+    
+    # Autoriser Railway
+    if ".railway.app" in origin or ".up.railway.app" in origin:
+        return True
+    
+    # Autoriser Shopify
+    if ".myshopify.com" in origin:
+        return True
+    
+    return False
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.myshopify\.com|https://.*\.railway\.app|http://localhost.*",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -309,70 +317,82 @@ async def api_generate(request: Request):
             shop_domain = f"{shop_domain}.myshopify.com"
         
         # Récupérer le shop
-        db = next(get_db())
-        shop_record = db.query(Shop).filter(Shop.domain == shop_domain).first()
+        from database import SessionLocal
+        db = SessionLocal()
         
-        if not shop_record:
-            raise HTTPException(status_code=404, detail="Shop not found")
-        
-        # Vérifier les crédits
-        if shop_record.credits < 1:
-            return JSONResponse(
-                {"error": "Insufficient credits", "credits": 0},
-                status_code=402
+        try:
+            shop_record = db.query(Shop).filter(Shop.domain == shop_domain).first()
+            
+            if not shop_record:
+                raise HTTPException(status_code=404, detail="Shop not found")
+            
+            # Vérifier les crédits
+            if shop_record.credits < 1:
+                return JSONResponse(
+                    {"error": "Insufficient credits", "credits": 0},
+                    status_code=402
+                )
+            
+            # Préparer les images
+            if not body.get("person_image_base64"):
+                raise HTTPException(status_code=400, detail="Person image required")
+            
+            person_bytes = base64.b64decode(body.get("person_image_base64"))
+            person_file = io.BytesIO(person_bytes)
+            
+            garment_input = None
+            if body.get("clothing_file_base64"):
+                garment_bytes = base64.b64decode(body.get("clothing_file_base64"))
+                garment_input = io.BytesIO(garment_bytes)
+            elif body.get("clothing_url"):
+                garment_input = body.get("clothing_url")
+                if garment_input.startswith("//"):
+                    garment_input = "https:" + garment_input
+            else:
+                raise HTTPException(status_code=400, detail="No garment provided")
+            
+            start_time = time.time()
+            
+            # Générer le try-on
+            result_url = ReplicateService.generate_tryon(
+                person_image=person_file,
+                garment_image=garment_input,
+                category=body.get("category", "upper_body")
             )
-        
-        # Préparer les images
-        if not body.get("person_image_base64"):
-            raise HTTPException(status_code=400, detail="Person image required")
-        
-        person_bytes = base64.b64decode(body.get("person_image_base64"))
-        person_file = io.BytesIO(person_bytes)
-        
-        garment_input = None
-        if body.get("clothing_file_base64"):
-            garment_bytes = base64.b64decode(body.get("clothing_file_base64"))
-            garment_input = io.BytesIO(garment_bytes)
-        elif body.get("clothing_url"):
-            garment_input = body.get("clothing_url")
-            if garment_input.startswith("//"):
-                garment_input = "https:" + garment_input
-        else:
-            raise HTTPException(status_code=400, detail="No garment provided")
-        
-        start_time = time.time()
-        
-        # Générer le try-on
-        result_url = ReplicateService.generate_tryon(
-            person_image=person_file,
-            garment_image=garment_input,
-            category=body.get("category", "upper_body")
-        )
-        
-        # Mettre à jour les stats
-        shop_record.credits -= 1
-        shop_record.total_tryons += 1
-        
-        latency_ms = int((time.time() - start_time) * 1000)
-        
-        client_ip = request.client.host
-        log = TryOnLog(
-            shop=shop_domain,
-            customer_ip=client_ip,
-            product_id=body.get("product_id"),
-            success=True,
-            latency_ms=latency_ms,
-            result_image_url=result_url
-        )
-        db.add(log)
-        db.commit()
-        db.close()
-        
-        return {
-            "success": True,
-            "result_image_url": result_url,
-            "credits_remaining": shop_record.credits
-        }
+            
+            # Mettre à jour les stats
+            shop_record.credits -= 1
+            shop_record.total_tryons += 1
+            
+            latency_ms = int((time.time() - start_time) * 1000)
+            
+            client_ip = request.client.host
+            log = TryOnLog(
+                shop=shop_domain,
+                customer_ip=client_ip,
+                product_id=body.get("product_id"),
+                success=True,
+                latency_ms=latency_ms,
+                result_image_url=result_url
+            )
+            db.add(log)
+            db.commit()
+            
+            credits_remaining = shop_record.credits
+            
+            return {
+                "success": True,
+                "result_image_url": result_url,
+                "credits_remaining": credits_remaining
+            }
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as e:
+            db.rollback()
+            raise e
+        finally:
+            db.close()
         
     except HTTPException as e:
         raise e

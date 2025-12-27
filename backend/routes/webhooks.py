@@ -61,15 +61,19 @@ async def customer_data_request(
     print(f"📋 GDPR Data Request: {shop_domain} - Customer: {customer.get('id')}")
     
     # Récupérer les données du customer
-    db = next(get_db())
+    from database import SessionLocal
+    db = SessionLocal()
     
-    # TODO: Récupérer les logs liés à ce customer
-    # Pour l'instant, on ne stocke que les IPs (anonyme)
-    
-    # Envoyer les données au customer (email, API, etc.)
-    # TODO: Implémenter l'envoi
-    
-    return JSONResponse({"success": True})
+    try:
+        # TODO: Récupérer les logs liés à ce customer
+        # Pour l'instant, on ne stocke que les IPs (anonyme)
+        
+        # Envoyer les données au customer (email, API, etc.)
+        # TODO: Implémenter l'envoi
+        
+        return JSONResponse({"success": True})
+    finally:
+        db.close()
 
 
 @router.post("/customers/redact")
@@ -92,20 +96,28 @@ async def customer_redact(
     
     print(f"🗑️  GDPR Customer Redact: {shop_domain} - Customer: {customer.get('id')}")
     
-    db = next(get_db())
+    from database import SessionLocal
+    db = SessionLocal()
     
-    # Supprimer les données liées au customer
-    # Note: On ne stocke que des IPs, pas d'ID customer
-    # Donc peu de données à supprimer
-    
-    db.query(TryOnLog).filter(
-        TryOnLog.shop == shop_domain,
-        TryOnLog.customer_id == str(customer.get('id'))
-    ).delete()
-    
-    db.commit()
-    
-    return JSONResponse({"success": True})
+    try:
+        # Supprimer les données liées au customer
+        # Note: On ne stocke que des IPs, pas d'ID customer
+        # Donc peu de données à supprimer
+        
+        db.query(TryOnLog).filter(
+            TryOnLog.shop == shop_domain,
+            TryOnLog.customer_id == str(customer.get('id'))
+        ).delete()
+        
+        db.commit()
+        
+        return JSONResponse({"success": True})
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error in customer redact: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 
 @router.post("/shop/redact")
@@ -127,19 +139,27 @@ async def shop_redact(
     
     print(f"🗑️  GDPR Shop Redact: {shop_domain}")
     
-    db = next(get_db())
+    from database import SessionLocal
+    db = SessionLocal()
     
-    # Supprimer TOUTES les données
-    db.query(TryOnLog).filter(TryOnLog.shop == shop_domain).delete()
-    db.query(RateLimit).filter(RateLimit.shop == shop_domain).delete()
-    db.query(CreditPurchase).filter(CreditPurchase.shop == shop_domain).delete()
-    db.query(Shop).filter(Shop.domain == shop_domain).delete()
-    
-    db.commit()
-    
-    print(f"✅ Shop {shop_domain} data deleted")
-    
-    return JSONResponse({"success": True})
+    try:
+        # Supprimer TOUTES les données
+        db.query(TryOnLog).filter(TryOnLog.shop == shop_domain).delete()
+        db.query(RateLimit).filter(RateLimit.shop == shop_domain).delete()
+        db.query(CreditPurchase).filter(CreditPurchase.shop == shop_domain).delete()
+        db.query(Shop).filter(Shop.domain == shop_domain).delete()
+        
+        db.commit()
+        
+        print(f"✅ Shop {shop_domain} data deleted")
+        
+        return JSONResponse({"success": True})
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error in shop redact: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 
 # ==========================================
@@ -165,16 +185,25 @@ async def app_uninstalled(
     
     print(f"👋 App Uninstalled: {shop_domain}")
     
-    db = next(get_db())
-    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    from database import SessionLocal
+    db = SessionLocal()
     
-    if shop:
-        shop.is_active = False
-        shop.uninstalled_at = datetime.utcnow()
-        db.commit()
-        print(f"✅ Shop {shop_domain} marked as inactive")
-    
-    return JSONResponse({"success": True})
+    try:
+        shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+        
+        if shop:
+            shop.is_active = False
+            shop.uninstalled_at = datetime.utcnow()
+            db.commit()
+            print(f"✅ Shop {shop_domain} marked as inactive")
+        
+        return JSONResponse({"success": True})
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error in app uninstalled: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 
 # ==========================================
@@ -216,27 +245,35 @@ async def billing_charge_activate(
     
     print(f"💳 Billing Charge Activated: {shop_domain} - Charge: {charge_id}")
     
-    db = next(get_db())
+    from database import SessionLocal
+    db = SessionLocal()
     
-    # Trouver l'achat correspondant
-    purchase = db.query(CreditPurchase).filter(
-        CreditPurchase.charge_id == charge_id,
-        CreditPurchase.shop == shop_domain
-    ).first()
-    
-    if purchase and purchase.status != "completed":
-        # Activer les crédits
-        shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
-        if shop:
-            shop.credits += purchase.credits_purchased
-            shop.lifetime_credits += purchase.credits_purchased
-            purchase.status = "completed"
-            purchase.activated_at = datetime.utcnow()
-            db.commit()
-            print(f"✅ Credits activated: {purchase.credits_purchased} credits for {shop_domain}")
+    try:
+        # Trouver l'achat correspondant
+        purchase = db.query(CreditPurchase).filter(
+            CreditPurchase.charge_id == charge_id,
+            CreditPurchase.shop == shop_domain
+        ).first()
+        
+        if purchase and purchase.status != "completed":
+            # Activer les crédits
+            shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+            if shop:
+                shop.credits += purchase.credits_purchased
+                shop.lifetime_credits += purchase.credits_purchased
+                purchase.status = "completed"
+                purchase.activated_at = datetime.utcnow()
+                db.commit()
+                print(f"✅ Credits activated: {purchase.credits_purchased} credits for {shop_domain}")
+            else:
+                print(f"⚠️  Shop not found: {shop_domain}")
         else:
-            print(f"⚠️  Shop not found: {shop_domain}")
-    else:
-        print(f"⚠️  Purchase not found or already completed: {charge_id}")
-    
-    return JSONResponse({"success": True})
+            print(f"⚠️  Purchase not found or already completed: {charge_id}")
+        
+        return JSONResponse({"success": True})
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error in billing charge activate: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()

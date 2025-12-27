@@ -368,101 +368,125 @@ async def generate_tryon(
         raise HTTPException(status_code=400, detail="Shop parameter missing")
     
     # 3. Récupérer la config du shop
-    db = next(get_db())
-    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-    
-    if not shop_record:
-        raise HTTPException(status_code=404, detail="Shop not found")
-    
-    # 4. Vérifier les crédits
-    if shop_record.credits < 1:
-        return JSONResponse(
-            {"error": "Insufficient credits", "credits": 0},
-            status_code=402
-        )
-    
-    # 5. Rate limiting par IP
-    client_ip = request.client.host
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    
-    rate_limit = db.query(RateLimit).filter(
-        RateLimit.shop == shop,
-        RateLimit.customer_ip == client_ip,
-        RateLimit.date == today
-    ).first()
-    
-    if not rate_limit:
-        rate_limit = RateLimit(shop=shop, customer_ip=client_ip, date=today, count=0)
-        db.add(rate_limit)
-    
-    if rate_limit.count >= shop_record.max_tries_per_user:
-        return JSONResponse(
-            {"error": "Daily limit reached", "limit": shop_record.max_tries_per_user},
-            status_code=429
-        )
+    from database import SessionLocal
+    db = SessionLocal()
     
     try:
-        # 6. Préparer les images
-        person_bytes = base64.b64decode(body.person_image_base64)
-        person_file = io.BytesIO(person_bytes)
+        shop_record = db.query(Shop).filter(Shop.domain == shop).first()
         
-        garment_input = None
-        if body.clothing_file_base64:
-            garment_bytes = base64.b64decode(body.clothing_file_base64)
-            garment_input = io.BytesIO(garment_bytes)
-        elif body.clothing_url:
-            garment_input = body.clothing_url
-            if garment_input.startswith("//"):
-                garment_input = "https:" + garment_input
-        else:
-            raise HTTPException(status_code=400, detail="No garment provided")
+        if not shop_record:
+            raise HTTPException(status_code=404, detail="Shop not found")
         
-        # 7. Générer le try-on via Replicate
-        result_url = ReplicateService.generate_tryon(
-            person_image=person_file,
-            garment_image=garment_input,
-            category="upper_body"
-        )
+        # 4. Vérifier les crédits
+        if shop_record.credits < 1:
+            return JSONResponse(
+                {"error": "Insufficient credits", "credits": 0},
+                status_code=402
+            )
         
-        # 8. Mettre à jour les stats
-        shop_record.credits -= 1
-        shop_record.total_tryons += 1
-        rate_limit.count += 1
+        # 5. Rate limiting par IP
+        client_ip = request.client.host
+        today = datetime.utcnow().strftime("%Y-%m-%d")
         
-        latency_ms = int((time.time() - start_time) * 1000)
+        rate_limit = db.query(RateLimit).filter(
+            RateLimit.shop == shop,
+            RateLimit.customer_ip == client_ip,
+            RateLimit.date == today
+        ).first()
         
-        log = TryOnLog(
-            shop=shop,
-            customer_ip=client_ip,
-            product_id=body.product_id,
-            success=True,
-            latency_ms=latency_ms,
-            result_image_url=result_url
-        )
-        db.add(log)
-        db.commit()
+        if not rate_limit:
+            rate_limit = RateLimit(shop=shop, customer_ip=client_ip, date=today, count=0)
+            db.add(rate_limit)
         
-        return JSONResponse({
-            "result_image_url": result_url,
-            "credits_remaining": shop_record.credits,
-            "generation_time_ms": latency_ms
-        })
+        if rate_limit.count >= shop_record.max_tries_per_user:
+            return JSONResponse(
+                {"error": "Daily limit reached", "limit": shop_record.max_tries_per_user},
+                status_code=429
+            )
         
+        try:
+            # 6. Préparer les images
+            person_bytes = base64.b64decode(body.person_image_base64)
+            person_file = io.BytesIO(person_bytes)
+            
+            garment_input = None
+            if body.clothing_file_base64:
+                garment_bytes = base64.b64decode(body.clothing_file_base64)
+                garment_input = io.BytesIO(garment_bytes)
+            elif body.clothing_url:
+                garment_input = body.clothing_url
+                if garment_input.startswith("//"):
+                    garment_input = "https:" + garment_input
+            else:
+                raise HTTPException(status_code=400, detail="No garment provided")
+            
+            # 7. Générer le try-on via Replicate
+            result_url = ReplicateService.generate_tryon(
+                person_image=person_file,
+                garment_image=garment_input,
+                category="upper_body"
+            )
+            
+            # 8. Mettre à jour les stats
+            shop_record.credits -= 1
+            shop_record.total_tryons += 1
+            rate_limit.count += 1
+            
+            latency_ms = int((time.time() - start_time) * 1000)
+            
+            log = TryOnLog(
+                shop=shop,
+                customer_ip=client_ip,
+                product_id=body.product_id,
+                success=True,
+                latency_ms=latency_ms,
+                result_image_url=result_url
+            )
+            db.add(log)
+            db.commit()
+            
+            return JSONResponse({
+                "result_image_url": result_url,
+                "credits_remaining": shop_record.credits,
+                "generation_time_ms": latency_ms
+            })
+            
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as e:
+            # Log l'erreur
+            db.rollback()
+            latency_ms = int((time.time() - start_time) * 1000)
+            log = TryOnLog(
+                shop=shop,
+                customer_ip=client_ip,
+                product_id=body.product_id if body else None,
+                success=False,
+                error_message=str(e),
+                latency_ms=latency_ms
+            )
+            try:
+                db.add(log)
+                db.commit()
+            except:
+                db.rollback()
+            
+            return JSONResponse(
+                {"error": "Generation failed", "message": str(e)},
+                status_code=500
+            )
+    except HTTPException:
+        if db:
+            db.rollback()
+        raise
     except Exception as e:
-        # Log l'erreur
-        latency_ms = int((time.time() - start_time) * 1000)
-        log = TryOnLog(
-            shop=shop,
-            customer_ip=client_ip,
-            product_id=body.product_id,
-            success=False,
-            error_message=str(e),
-            latency_ms=latency_ms
-        )
-        db.add(log)
-        db.commit()
-        
+        if db:
+            db.rollback()
         return JSONResponse(
-            {"error": "Generation failed", "message": str(e)},
+            {"error": "Database error", "message": str(e)},
             status_code=500
         )
+    finally:
+        if db:
+            db.close()

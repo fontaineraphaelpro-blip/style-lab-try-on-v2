@@ -67,9 +67,10 @@ def get_authenticated_shop(
             detail="Shop not found or inactive"
         )
     
-    # Mettre à jour last_active_at
-    shop.last_active_at = datetime.utcnow()
-    db.commit()
+    # Mettre à jour last_active_at seulement si le shop existe
+    if shop:
+        shop.last_active_at = datetime.utcnow()
+        db.commit()
     
     return shop
 
@@ -513,8 +514,9 @@ async def billing_confirm(
     Appelée après que le merchant ait accepté la charge.
     """
     from fastapi.responses import RedirectResponse, HTMLResponse
+    from database import SessionLocal
     
-    db = next(get_db())
+    db = SessionLocal()
     
     # Trouver l'achat
     purchase = None
@@ -599,19 +601,25 @@ async def billing_confirm(
             print(f"❌ Error checking charge status: {e}")
     
     # Fallback: si pas de charge_id ou erreur, afficher un message
-    return HTMLResponse(
-        content=f"""
-        <html>
-        <head><title>Payment Processing</title></head>
-        <body style="font-family: Arial; text-align: center; padding: 50px;">
-            <h1>⏳ Payment Processing</h1>
-            <p>Your payment of <strong>{purchase.credits_purchased} credits</strong> is being processed.</p>
-            <p>Credits will be added to your account once confirmed.</p>
-            <p><a href="/">Return to Dashboard</a></p>
-        </body>
-        </html>
-        """
-    )
+    try:
+        return HTMLResponse(
+            content=f"""
+            <html>
+            <head><title>Payment Processing</title></head>
+            <body style="font-family: Arial; text-align: center; padding: 50px;">
+                <h1>⏳ Payment Processing</h1>
+                <p>Your payment of <strong>{purchase.credits_purchased if purchase else 0} credits</strong> is being processed.</p>
+                <p>Credits will be added to your account once confirmed.</p>
+                <p><a href="/">Return to Dashboard</a></p>
+            </body>
+            </html>
+            """
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 
 # ==========================================
