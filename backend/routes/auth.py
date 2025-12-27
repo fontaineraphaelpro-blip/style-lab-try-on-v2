@@ -209,10 +209,18 @@ async def oauth_callback(
             db.add(shop_record)
             print(f"✅ Nouveau shop installé: {shop} - {FREE_CREDITS_ON_INSTALL} crédits gratuits ajoutés")
         
-        db.commit()
-        db.close()
-        
-        print(f"✅ Shop sauvegardé: {shop} - Crédits: {shop_record.credits}")
+        try:
+            db.commit()
+            print(f"✅ Shop sauvegardé en DB: {shop} - Crédits: {shop_record.credits}")
+        except Exception as db_error:
+            print(f"❌ Erreur lors du commit DB: {db_error}")
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database error: {str(db_error)}"
+            )
+        finally:
+            db.close()
         
         # Rediriger vers l'app embedded
         # Pour une app embedded, Shopify redirige automatiquement vers application_url
