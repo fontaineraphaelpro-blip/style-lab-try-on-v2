@@ -39,6 +39,7 @@ SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET")
 REPLICATE_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+APP_URL = os.getenv("APP_URL", "https://style-lab-try-on-v2-production.up.railway.app")
 
 
 # ==========================================
@@ -346,11 +347,22 @@ async def api_generate(request: Request):
             "credits_remaining": shop_record.credits
         }
         
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        raise e
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
         print(f"❌ Generate error: {e}")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+        print(f"❌ Traceback: {error_trace}")
+        env = os.getenv("ENVIRONMENT", "production")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Generation failed",
+                "message": str(e),
+                "details": error_trace if env == "development" else None
+            }
+        )
 
 # Webhooks
 app.include_router(
