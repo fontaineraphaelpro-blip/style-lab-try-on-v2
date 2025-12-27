@@ -221,14 +221,29 @@ async def api_buy_credits(
 ):
     """Route compatible frontend - initie l'achat de crédits"""
     from routes.admin import BillingRequest
+    from fastapi import HTTPException
     
-    body = await request.json()
-    billing_req = BillingRequest(
-        pack_id=body.get("pack_id"),
-        custom_amount=body.get("custom_amount")
-    )
-    
-    return await initiate_credit_purchase(request=billing_req, shop=shop, db=db)
+    try:
+        body = await request.json()
+        print(f"🛒 Achat de crédits demandé: shop={shop.domain}, body={body}")
+        
+        billing_req = BillingRequest(
+            pack_id=body.get("pack_id"),
+            custom_amount=body.get("custom_amount")
+        )
+        
+        result = await initiate_credit_purchase(request=billing_req, shop=shop, db=db)
+        print(f"✅ Résultat achat: {result}")
+        
+        return result
+    except HTTPException as e:
+        print(f"❌ Erreur HTTP lors de l'achat: {e}")
+        raise e
+    except Exception as e:
+        print(f"❌ Erreur lors de l'achat: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Purchase failed: {str(e)}")
 
 @app.post("/api/track-atc")
 async def api_track_atc(
