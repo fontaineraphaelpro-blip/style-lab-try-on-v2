@@ -219,7 +219,6 @@ def init_db():
         # Ne pas faire crash l'app si la DB n'est pas accessible
         print("⚠️  Continuing without database...")
         # Réinitialiser engine pour éviter les tentatives futures
-        global engine, SessionLocal
         engine = None
         SessionLocal = None
         # Ne PAS propager l'exception - l'app doit démarrer quand même
