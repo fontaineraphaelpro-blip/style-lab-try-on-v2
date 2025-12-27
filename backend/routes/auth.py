@@ -78,7 +78,8 @@ async def auth_callback(
     shop: str = Query(...),
     code: str = Query(...),
     hmac: str = Query(None),
-    state: str = Query(None)
+    state: str = Query(None),
+    host: str = Query(None)  # Paramètre host pour apps embarquées
 ):
     """
     Callback OAuth après autorisation par le merchant.
@@ -135,10 +136,16 @@ async def auth_callback(
         db.commit()
         
         # Rediriger vers l'app embarquée
-        # Format correct pour les apps embarquées Shopify
-        shop_name = shop.replace('.myshopify.com', '')
-        app_url = f"{APPLICATION_URL}/app?shop={shop}&host={shop_name}"
+        # Pour les apps embarquées, utiliser le paramètre host de Shopify
+        if host:
+            # host est un token base64 fourni par Shopify pour les apps embarquées
+            app_url = f"{APPLICATION_URL}/app?shop={shop}&host={host}"
+        else:
+            # Fallback si host n'est pas fourni
+            shop_name = shop.replace('.myshopify.com', '')
+            app_url = f"{APPLICATION_URL}/app?shop={shop}&host={shop_name}"
         
+        # Redirection pour apps embarquées Shopify
         return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
@@ -146,18 +153,23 @@ async def auth_callback(
             <title>Installation réussie</title>
             <meta charset="UTF-8">
             <script>
-                // Rediriger vers l'app embarquée
+                // Pour les apps embarquées Shopify, utiliser window.top.location
+                // Le paramètre host permet à App Bridge de s'initialiser correctement
                 if (window.top !== window.self) {{
+                    // Dans une iframe (app embarquée)
                     window.top.location.href = "{app_url}";
                 }} else {{
+                    // Pas dans une iframe (fallback)
                     window.location.href = "{app_url}";
                 }}
             </script>
         </head>
-        <body style="font-family: system-ui; text-align: center; padding: 50px;">
-            <h1>✅ Installation réussie!</h1>
-            <p>Redirection en cours...</p>
-            <p><a href="{app_url}" style="color: #6366f1;">Cliquez ici si la redirection ne fonctionne pas</a></p>
+        <body style="font-family: system-ui; text-align: center; padding: 50px; background: #f5f5f5;">
+            <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 500px; margin: 100px auto;">
+                <h1 style="color: #10b981; margin-bottom: 20px;">✅ Installation réussie!</h1>
+                <p style="color: #64748b; margin-bottom: 30px;">Redirection vers l'application...</p>
+                <p><a href="{app_url}" style="color: #6366f1; text-decoration: none; font-weight: 500;">Cliquez ici si la redirection ne fonctionne pas</a></p>
+            </div>
         </body>
         </html>
         """)
