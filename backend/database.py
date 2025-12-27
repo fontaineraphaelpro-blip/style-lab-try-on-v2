@@ -36,13 +36,15 @@ def _init_engine():
         return None
     
     try:
+        # Créer l'engine avec connect_args pour éviter les erreurs immédiates
         engine = create_engine(
             DATABASE_URL,
             pool_pre_ping=True,
             pool_size=10,
             max_overflow=20,
             pool_recycle=300,
-            echo=False  # Mettre à True pour debug SQL
+            echo=False,  # Mettre à True pour debug SQL
+            connect_args={"connect_timeout": 5}  # Timeout court pour éviter de bloquer
         )
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         return engine
