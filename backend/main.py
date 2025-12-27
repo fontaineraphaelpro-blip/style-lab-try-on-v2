@@ -52,7 +52,10 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Starting VTON AI Backend...")
     print(f"   Environment: {ENVIRONMENT}")
-    print(f"   Database: {DATABASE_URL[:30]}...")
+    if DATABASE_URL:
+        print(f"   Database: {DATABASE_URL[:30]}...")
+    else:
+        print("   Database: Not configured")
     
     # Initialiser la DB
     init_db()
