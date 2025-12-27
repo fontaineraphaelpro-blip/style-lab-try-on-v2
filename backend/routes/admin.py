@@ -5,10 +5,8 @@ Routes pour le dashboard admin avec analytics avancées.
 """
 
 import hashlib
-import os
-import requests
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, desc
 from datetime import datetime, timedelta
@@ -16,7 +14,6 @@ from typing import Optional, List
 from pydantic import BaseModel
 
 from database import get_db, Shop, TryOnLog, RateLimit, CreditPurchase
-from routes.session_auth import get_shop_from_token
 
 router = APIRouter()
 
@@ -42,17 +39,19 @@ class BillingRequest(BaseModel):
 # ==========================================
 
 def get_authenticated_shop(
-    shop_domain: str = Depends(get_shop_from_token),
+    request: Request,
     db: Session = Depends(get_db)
 ) -> Shop:
     """
     Authentifie les requêtes admin via Session Token.
-    Utilise maintenant la vérification de Session Token Shopify.
     """
+    # Extraire le shop depuis les query params (temporaire)
+    shop_domain = request.query_params.get("shop")
+    
     if not shop_domain:
         raise HTTPException(
             status_code=401,
-            detail="Unauthorized: No shop in token"
+            detail="Unauthorized: No shop parameter"
         )
     
     shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
@@ -419,71 +418,25 @@ async def initiate_credit_purchase(
         credits = pack["credits"]
         price = pack["price"]
     
-    # Implémenter Shopify Billing API
-    try:
-        # Créer une charge one-time via Shopify Billing API
-        # Utiliser application_charges pour les crédits one-time
-        billing_url = f"https://{shop.domain}/admin/api/2025-01/application_charges.json"
-        
-        APPLICATION_URL = os.getenv("APPLICATION_URL", "https://style-lab-try-on-v2-production.up.railway.app")
-        ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
-        
-        charge_data = {
-            "application_charge": {
-                "name": f"VTON Credits - {credits} credits",
-                "price": price,
-                "return_url": f"{APPLICATION_URL}/api/admin/billing/confirm",
-                "test": ENVIRONMENT == "development"
-            }
-        }
-        
-        headers = {
-            "X-Shopify-Access-Token": shop.access_token,
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(billing_url, json=charge_data, headers=headers)
-        response.raise_for_status()
-        
-        billing_response = response.json()
-        charge = billing_response.get("application_charge", {})
-        charge_id = charge.get("id")
-        confirmation_url = charge.get("confirmation_url")
-        
-        # Sauvegarder la transaction
-        purchase = CreditPurchase(
-            shop=shop.domain,
-            credits_purchased=credits,
-            amount_usd=price,
-            charge_id=str(charge_id) if charge_id else None,
-            status='pending'
-        )
-        db.add(purchase)
-        db.commit()
-        
-        return {
-            "success": True,
-            "purchase_id": purchase.id,
-            "credits": credits,
-            "price_usd": price,
-            "confirmation_url": confirmation_url or f"{os.getenv('APPLICATION_URL', 'https://style-lab-try-on-v2-production.up.railway.app')}/billing/confirm?id={purchase.id}"
-        }
-        
-    except requests.RequestException as e:
-        # En cas d'erreur, créer quand même l'enregistrement
-        purchase = CreditPurchase(
-            shop=shop.domain,
-            credits_purchased=credits,
-            amount_usd=price,
-            status='failed'
-        )
-        db.add(purchase)
-        db.commit()
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create billing charge: {str(e)}"
-        )
+    # TODO: Implémenter Shopify Billing API
+    # Pour l'instant, retourner une URL de test
+    
+    purchase = CreditPurchase(
+        shop=shop.domain,
+        credits_purchased=credits,
+        amount_usd=price,
+        status='pending'
+    )
+    db.add(purchase)
+    db.commit()
+    
+    return {
+        "success": True,
+        "purchase_id": purchase.id,
+        "credits": credits,
+        "price_usd": price,
+        "confirmation_url": f"https://stylelab-vtonn.onrender.com/billing/confirm?id={purchase.id}"
+    }
 
 
 @router.post("/track-atc")
@@ -498,74 +451,6 @@ async def track_add_to_cart(
     db.commit()
     
     return {"success": True, "total_atc": shop.total_atc}
-
-
-# ==========================================
-# BILLING CONFIRMATION
-# ==========================================
-
-@router.get("/billing/confirm")
-async def billing_confirm(
-    charge_id: str = Query(...),
-    shop: Shop = Depends(get_authenticated_shop),
-    db: Session = Depends(get_db)
-):
-    """
-    Callback après confirmation d'un achat de crédits.
-    Active les crédits pour le shop.
-    """
-    # Récupérer la transaction
-    purchase = db.query(CreditPurchase).filter(
-        CreditPurchase.charge_id == charge_id,
-        CreditPurchase.shop == shop.domain
-    ).first()
-    
-    if not purchase:
-        raise HTTPException(status_code=404, detail="Purchase not found")
-    
-    # Vérifier le statut de la charge avec Shopify
-    try:
-        charge_url = f"https://{shop.domain}/admin/api/2025-01/application_charges/{charge_id}.json"
-        headers = {
-            "X-Shopify-Access-Token": shop.access_token,
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.get(charge_url, headers=headers)
-        response.raise_for_status()
-        
-        charge_data = response.json().get("application_charge", {})
-        charge_status = charge_data.get("status")
-        
-        if charge_status == "active":
-            # Activer les crédits
-            shop.credits += purchase.credits_purchased
-            shop.lifetime_credits += purchase.credits_purchased
-            purchase.status = "completed"
-            purchase.activated_at = datetime.utcnow()
-            db.commit()
-            
-            return HTMLResponse(content=f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Crédits activés</title>
-                <script>
-                    window.top.location.href = "{os.getenv('APPLICATION_URL', 'https://style-lab-try-on-v2-production.up.railway.app')}/app";
-                </script>
-            </head>
-            <body>
-                <p>Crédits activés avec succès! Redirection en cours...</p>
-            </body>
-            </html>
-            """)
-        else:
-            purchase.status = "failed"
-            db.commit()
-            raise HTTPException(status_code=400, detail=f"Charge status is {charge_status}")
-            
-    except requests.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Failed to verify charge: {str(e)}")
 
 
 # ==========================================

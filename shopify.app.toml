@@ -4,7 +4,7 @@
 
 client_id = "85e1a9dba888450e33b84fbb067bc3a5"
 name = "Try-On StyleLab"
-application_url = "https://style-lab-try-on-v2-production.up.railway.app"
+application_url = "https://style-lab-try-on-v2-1.onrender.com"
 embedded = true
 
 [access_scopes]
@@ -12,14 +12,14 @@ scopes = "write_products,read_products"
 
 [auth]
 redirect_urls = [
-  "https://style-lab-try-on-v2-production.up.railway.app/auth/callback",
-  "https://style-lab-try-on-v2-production.up.railway.app/auth/shopify/callback",
-  "https://style-lab-try-on-v2-production.up.railway.app/api/auth/callback"
+  "https://style-lab-try-on-v2-1.onrender.com/auth/callback",
+  "https://style-lab-try-on-v2-1.onrender.com/auth/shopify/callback",
+  "https://style-lab-try-on-v2-1.onrender.com/api/auth/callback"
 ]
 
 # === APP PROXY (ESSENTIEL POUR MODE CLIENT) ===
 [app_proxy]
-url = "https://style-lab-try-on-v2-production.up.railway.app"
+url = "https://style-lab-try-on-v2-1.onrender.com"
 subpath = "tryon"
 prefix = "apps"
 
@@ -31,7 +31,7 @@ topics = [
   "app/uninstalled",
   "products/update"
 ]
-uri = "/webhooks/app/uninstalled"
+uri = "/webhooks/gdpr"
 
 [[webhooks.subscriptions]]
 compliance_topics = [
@@ -39,16 +39,4 @@ compliance_topics = [
   "customers/redact",
   "shop/redact"
 ]
-uri = "/webhooks/customers/data_request"
-
-[[webhooks.subscriptions]]
-compliance_topics = [
-  "customers/redact"
-]
-uri = "/webhooks/customers/redact"
-
-[[webhooks.subscriptions]]
-compliance_topics = [
-  "shop/redact"
-]
-uri = "/webhooks/shop/redact"
+uri = "/webhooks/gdpr"

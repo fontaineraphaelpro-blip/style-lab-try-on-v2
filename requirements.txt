@@ -1,13 +1,1 @@
-fastapi
-uvicorn
-shopifyapi
-replicate
-requests
-pydantic
-python-multipart
-jinja2
-httpx
-sqlalchemy
-psycopg2-binary
-pyjwt
-cryptography
+ 

@@ -178,7 +178,15 @@ async def app_uninstalled(
 
 
 # ==========================================
-# TESTING (DEV ONLY) - REMOVED FOR PRODUCTION
+# TESTING (DEV ONLY)
 # ==========================================
-# L'endpoint /test a été supprimé pour la production.
-# Pour tester les webhooks, utiliser l'interface Shopify Partners.
+
+@router.post("/test")
+async def test_webhook(request: Request):
+    """
+    Endpoint de test pour vérifier que les webhooks fonctionnent.
+    À SUPPRIMER en production.
+    """
+    data = await request.json()
+    print(f"🧪 Test Webhook received: {data}")
+    return JSONResponse({"success": True, "echo": data})

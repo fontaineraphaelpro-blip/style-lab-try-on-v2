@@ -93,42 +93,13 @@ async def serve_widget_js(request: Request):
             this.shop = window.Shopify?.shop || '';
             this.productId = this.extractProductId();
             this.productImage = this.getProductImage();
-            this.settings = {
-                text: 'Try It On',
-                bg: '#000000',
-                color: '#ffffff'
-            };
             this.init();
-        }
-        
-        async loadSettings() {
-            try {
-                const shopDomain = this.shop || window.location.hostname;
-                if (!shopDomain) return;
-                
-                const settingsUrl = `${CONFIG.apiBase}/widget-settings?shop=${shopDomain}`;
-                const response = await fetch(settingsUrl);
-                if (response.ok) {
-                    this.settings = await response.json();
-                }
-            } catch (error) {
-                console.log('[VTON] Could not load settings, using defaults');
-            }
-        }
-        
-        darkenColor(color, percent) {
-            // Convertir hex en RGB
-            const num = parseInt(color.replace('#', ''), 16);
-            const r = Math.max(0, (num >> 16) - percent);
-            const g = Math.max(0, ((num >> 8) & 0x00FF) - percent);
-            const b = Math.max(0, (num & 0x0000FF) - percent);
-            return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
         }
         
         extractProductId() {
             const meta = document.querySelector('meta[property="og:url"]');
             if (meta) {
-                const match = meta.content.match(/products\\/([^?]+)/);
+                const match = meta.content.match(/products\/([^?]+)/);
                 return match ? match[1] : null;
             }
             return null;
@@ -139,14 +110,11 @@ async def serve_widget_js(request: Request):
             return img ? img.src : null;
         }
         
-        async init() {
+        init() {
             if (!this.productId || !this.productImage) {
                 console.log('[VTON] Not a product page, skipping...');
                 return;
             }
-            
-            // Charger les paramètres personnalisés
-            await this.loadSettings();
             
             window.addEventListener('DOMContentLoaded', () => {
                 this.injectButton();
@@ -166,11 +134,8 @@ async def serve_widget_js(request: Request):
                     <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2"/>
                     <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2"/>
                 </svg>
-                <span>${this.settings.text || 'Try It On'}</span>
+                <span>Try It On</span>
             `;
-            // Appliquer les couleurs personnalisées
-            vtonBtn.style.backgroundColor = this.settings.bg || '#000000';
-            vtonBtn.style.color = this.settings.color || '#ffffff';
             vtonBtn.onclick = () => this.openModal();
             
             // Insérer après le bouton Add to Cart
@@ -185,10 +150,6 @@ async def serve_widget_js(request: Request):
             
             const styles = document.createElement('style');
             styles.id = 'vton-styles';
-            // Calculer la couleur hover (assombrir de 20%)
-            const bgColor = this.settings.bg || '#000000';
-            const hoverColor = this.darkenColor(bgColor, 20);
-            
             styles.textContent = `
                 .vton-button {
                     display: flex;
@@ -197,6 +158,8 @@ async def serve_widget_js(request: Request):
                     width: 100%;
                     padding: 12px 24px;
                     margin-top: 12px;
+                    background: #000;
+                    color: #fff;
                     border: none;
                     border-radius: 4px;
                     font-size: 16px;
@@ -206,9 +169,8 @@ async def serve_widget_js(request: Request):
                     justify-content: center;
                 }
                 .vton-button:hover {
-                    background: ${hoverColor} !important;
+                    background: #333;
                     transform: translateY(-1px);
-                    opacity: 0.9;
                 }
                 .vton-modal {
                     position: fixed;
@@ -330,23 +292,8 @@ async def serve_widget_js(request: Request):
                     })
                 });
                 
-                if (response.status === 402) {
-                    alert('This shop has run out of credits. Please contact the store owner.');
-                    btn.textContent = 'Generate Try-On';
-                    btn.disabled = false;
-                    return;
-                }
-                
-                if (response.status === 429) {
-                    alert('Daily limit reached. Please try again tomorrow.');
-                    btn.textContent = 'Generate Try-On';
-                    btn.disabled = false;
-                    return;
-                }
-                
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.error || 'Generation failed');
+                    throw new Error('Generation failed');
                 }
                 
                 const data = await response.json();
@@ -354,24 +301,8 @@ async def serve_widget_js(request: Request):
                 // Afficher le résultat
                 const resultDiv = document.getElementById('vton-result');
                 const resultImg = document.getElementById('vton-result-img');
-                const shopBtn = document.getElementById('vton-shop-btn');
-                
                 resultImg.src = data.result_image_url;
                 resultDiv.style.display = 'block';
-                
-                // Afficher le bouton "Shop This Look"
-                if (shopBtn) {
-                    shopBtn.style.display = 'block';
-                    shopBtn.onclick = () => {
-                        // Trouver le bouton Add to Cart et cliquer dessus
-                        const addToCartBtn = document.querySelector(CONFIG.selectors.addToCartButton);
-                        if (addToCartBtn) {
-                            addToCartBtn.click();
-                        }
-                        // Fermer la modal
-                        document.getElementById('vton-modal').classList.remove('active');
-                    };
-                }
                 
                 btn.textContent = 'Generate Another';
                 btn.disabled = false;

@@ -5,7 +5,7 @@ SQLAlchemy setup pour PostgreSQL sur Render.
 """
 
 import os
-from sqlalchemy import create_engine, Column, String, Integer, Boolean, DateTime, Text, DECIMAL, text
+from sqlalchemy import create_engine, Column, String, Integer, Boolean, DateTime, Text, DECIMAL
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -16,71 +16,23 @@ from datetime import datetime
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# DEBUG: Afficher l'URL complète pour debug
-if DATABASE_URL:
-    print(f"🔍 DEBUG: Raw DATABASE_URL from env: {DATABASE_URL[:100]}...")
-
 # Fix pour Render (remplace postgres:// par postgresql://)
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Vérifier si l'URL contient un hostname Render (dpg-*) et l'ignorer
-if DATABASE_URL and "dpg-" in DATABASE_URL:
-    print(f"⚠️  WARNING: Detected Render database URL (dpg-*), ignoring it")
-    print(f"   Full URL: {DATABASE_URL}")
-    DATABASE_URL = None  # Ignorer l'URL Render
-    print("✅ DATABASE_URL set to None - app will start without database")
+print(f"🔧 Database URL: {DATABASE_URL[:50]}..." if DATABASE_URL else "⚠️ No DATABASE_URL")
 
-print(f"🔧 Database URL: {DATABASE_URL[:50]}..." if DATABASE_URL else "⚠️ No DATABASE_URL (will skip DB initialization)")
+# Engine SQLAlchemy
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,
+    echo=False  # Mettre à True pour debug SQL
+)
 
-# Engine SQLAlchemy (créé lazy - seulement si DATABASE_URL existe)
-engine = None
-SessionLocal = None
-
-def _init_engine():
-    """Initialise l'engine de manière lazy"""
-    global engine, SessionLocal
-    if engine is not None:
-        return engine
-    
-    if not DATABASE_URL:
-        print("🔍 DEBUG: _init_engine - No DATABASE_URL, returning None")
-        return None
-    
-    # Vérifier à nouveau si l'URL est Render (double sécurité)
-    if "dpg-" in DATABASE_URL:
-        print(f"⚠️  WARNING: Render URL detected in _init_engine, ignoring")
-        print(f"   URL: {DATABASE_URL[:100]}...")
-        return None
-    
-    print(f"🔍 DEBUG: _init_engine - DATABASE_URL looks valid: {DATABASE_URL[:50]}...")
-    
-    try:
-        # Créer l'engine avec connect_args pour éviter les erreurs immédiates
-        # Railway internal URLs fonctionnent si les services sont dans le même projet
-        engine = create_engine(
-            DATABASE_URL,
-            pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=20,
-            pool_recycle=300,
-            echo=False,  # Mettre à True pour debug SQL
-            connect_args={
-                "connect_timeout": 10,  # Timeout de 10 secondes
-                "sslmode": "prefer"  # SSL optionnel pour Railway
-            }
-        )
-        # Ne pas tester la connexion immédiatement - laisser init_db() le faire
-        # Cela évite de faire crash l'app si la DB n'est pas accessible
-        print("✅ Database engine created (connection will be tested in init_db)")
-        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-        return engine
-    except Exception as e:
-        print(f"⚠️  Failed to create database engine: {e}")
-        print(f"   DATABASE_URL: {DATABASE_URL[:50]}...")
-        engine = None
-        SessionLocal = None
-        return None
+# Session factory
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base pour les modèles
 Base = declarative_base()
@@ -186,43 +138,13 @@ def init_db():
     """
     Crée toutes les tables dans la base de données.
     """
-    global engine, SessionLocal
-    
-    # Vérifier AVANT tout si l'URL est Render
-    if DATABASE_URL and "dpg-" in DATABASE_URL:
-        print(f"⚠️  BLOCKED: Render URL detected in init_db, skipping database initialization")
-        print(f"   URL contains: dpg-d57fit63jp1c73auvnc0-a")
-        return
-    
-    if not DATABASE_URL:
-        print("⚠️  DATABASE_URL not set, skipping database initialization")
-        return
-    
-    # Initialiser l'engine de manière lazy
-    _init_engine()
-    
-    if not engine:
-        print("⚠️  Database engine not available, skipping initialization")
-        return
-    
     try:
         print("🔧 Initializing database...")
-        # Tester la connexion d'abord avant de créer les tables
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        print("✅ Database connection successful")
-        # Créer les tables
         Base.metadata.create_all(bind=engine)
         print("✅ Database tables created successfully")
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
-        # Ne pas faire crash l'app si la DB n'est pas accessible
-        print("⚠️  Continuing without database...")
-        # Réinitialiser engine pour éviter les tentatives futures
-        engine = None
-        SessionLocal = None
-        # Ne PAS propager l'exception - l'app doit démarrer quand même
-        return
+        raise
 
 
 def get_db():
@@ -235,15 +157,6 @@ def get_db():
         def my_endpoint(db: Session = Depends(get_db)):
             ...
     """
-    global SessionLocal
-    
-    # Initialiser l'engine si pas déjà fait
-    _init_engine()
-    
-    if not SessionLocal:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=503, detail="Database not available")
-    
     db = SessionLocal()
     try:
         yield db

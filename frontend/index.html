@@ -5,128 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VTON AI</title>
     <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key="{{ api_key }}"></script>
-    <script>
-        // Initialiser App Bridge après chargement complet
-        (function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const shop = urlParams.get('shop');
-            const host = urlParams.get('host');
-            const apiKey = "{{ api_key }}";
-            
-            console.log("🔍 App Bridge init - shop:", shop, "host:", host, "apiKey:", apiKey ? "present" : "missing");
-            
-            let retryCount = 0;
-            const maxRetries = 50; // 5 secondes max (50 * 100ms)
-            
-            function initAppBridge() {
-                console.log(`🔄 initAppBridge attempt ${retryCount + 1} - AppBridge:`, !!window.AppBridge, "shop:", shop, "host:", host, "apiKey:", !!apiKey);
-                
-                if (window.AppBridge && shop && host && apiKey) {
-                    try {
-                        window.app = window.AppBridge.default({
-                            apiKey: apiKey,
-                            host: host,
-                            shop: shop
-                        });
-                        console.log("✅ App Bridge initialized successfully");
-                        // Masquer le fallback une fois App Bridge initialisé
-                        const fallback = document.getElementById('loading-fallback');
-                        if (fallback) {
-                            fallback.style.display = 'none';
-                        }
-                        // Afficher le contenu
-                        document.body.style.opacity = "1";
-                        document.body.classList.add('loaded');
-                    } catch (error) {
-                        console.error("❌ App Bridge initialization error:", error);
-                        // Afficher quand même le contenu en cas d'erreur
-                        document.body.style.opacity = "1";
-                        document.body.classList.add('loaded');
-                        const fallback = document.getElementById('loading-fallback');
-                        if (fallback) {
-                            fallback.style.display = 'none';
-                        }
-                    }
-                } else {
-                    retryCount++;
-                    if (retryCount < maxRetries) {
-                        console.warn(`⚠️ App Bridge not ready (attempt ${retryCount}/${maxRetries}) - AppBridge:`, !!window.AppBridge, "shop:", shop, "host:", host, "apiKey:", !!apiKey);
-                        // Réessayer après un court délai
-                        setTimeout(initAppBridge, 100);
-                    } else {
-                        console.error("❌ App Bridge initialization timeout - showing content anyway");
-                        // Afficher le contenu même si App Bridge n'est pas initialisé
-                        document.body.style.opacity = "1";
-                        document.body.classList.add('loaded');
-                        const fallback = document.getElementById('loading-fallback');
-                        if (fallback) {
-                            fallback.style.display = 'none';
-                        }
-                    }
-                }
-            }
-            
-            // Essayer immédiatement
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initAppBridge);
-            } else {
-                initAppBridge();
-            }
-        })();
-    </script>
-    <link rel="stylesheet" href="/app/styles.css">
+    <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet">
-    <style>
-        /* Fallback pour éviter page blanche */
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: system-ui, -apple-system, sans-serif;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-        body.loaded {
-            opacity: 1;
-        }
-        .loading-fallback {
-            display: flex;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: #f5f5f5;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-        .app-container {
-            min-height: 100vh;
-        }
-    </style>
 </head>
 <body>
-    <div class="loading-fallback" id="loading-fallback">
-        <div style="text-align: center;">
-            <div style="font-size: 24px; margin-bottom: 10px;">⏳ Loading...</div>
-            <div style="color: #666; font-size: 14px;">Initializing App Bridge...</div>
-        </div>
-    </div>
-    <script>
-        // Afficher le contenu après un délai de sécurité
-        document.addEventListener('DOMContentLoaded', function() {
-            // Si après 3 secondes App Bridge n'est pas initialisé, afficher quand même
-            setTimeout(function() {
-                const fallback = document.getElementById('loading-fallback');
-                if (fallback && fallback.style.display !== 'none') {
-                    console.log("⏰ Timeout reached, showing content anyway");
-                    fallback.style.display = 'none';
-                    document.body.style.opacity = "1";
-                }
-            }, 3000);
-        });
-    </script>
 
     <div class="app-container">
         <div id="admin-only-zone">
@@ -227,7 +110,10 @@
             
             <!-- BOUTON SORTI DU LABEL -->
             <div class="action-area">
-                <!-- Bouton de test CORS supprimé pour la production -->
+                <!-- Bouton de test CORS (temporaire pour debug) -->
+                <button type="button" onclick="testCORS()" style="margin-bottom: 10px; padding: 10px 20px; background: #6366f1; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem;">
+                    🧪 Test CORS Connection
+                </button>
                 
                 <button type="button" id="btnGo" onclick="generate()" class="btn-magic">
                     <span class="btn-content">Try It On Now <i class="fa-solid fa-wand-magic-sparkles"></i></span>
@@ -247,21 +133,6 @@
             </div>
         </div>
     </div>
-    <script>
-        // Log immédiat pour vérifier que le HTML est chargé
-        console.log("📄 index.html loaded");
-        console.log("📍 Current URL:", window.location.href);
-        console.log("🔑 API Key placeholder:", "{{ api_key }}");
-    </script>
-    <script src="/app/app.js" onerror="console.error('❌ Failed to load app.js')" onload="console.log('✅ app.js script tag loaded')"></script>
-    <script>
-        // Vérifier si app.js a défini des variables globales
-        setTimeout(function() {
-            console.log("🔍 Checking if app.js executed...");
-            if (typeof window.API_BASE_URL === 'undefined') {
-                console.error("❌ app.js did not execute - API_BASE_URL not defined");
-            }
-        }, 1000);
-    </script>
+    <script src="/app.js"></script>
 </body>
 </html>

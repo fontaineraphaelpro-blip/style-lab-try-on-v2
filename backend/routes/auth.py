@@ -1,17 +1,24 @@
 """
-OAuth Authentication Routes
-===========================
+Shopify OAuth Authentication Routes
+====================================
 Gère l'installation et l'authentification OAuth de l'app Shopify.
+
+Flux:
+1. /login?shop=SHOP.myshopify.com → Redirige vers /auth/shopify
+2. /auth/shopify → Initie l'OAuth avec Shopify
+3. /auth/callback → Reçoit le code OAuth et échange contre access_token
 """
 
 import os
 import hmac
 import hashlib
+import secrets
+import requests
 from fastapi import APIRouter, Request, HTTPException, Query
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
-import requests
+from urllib.parse import urlencode
 
 from database import get_db, Shop
 
@@ -20,243 +27,217 @@ router = APIRouter()
 # Configuration
 SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY")
 SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET")
-APPLICATION_URL = os.getenv("APPLICATION_URL", "https://style-lab-try-on-v2-production.up.railway.app")
+APP_URL = os.getenv("APP_URL", "https://style-lab-try-on-v2-1.onrender.com")
 SCOPES = "write_products,read_products"
 
 
 def verify_hmac(query_params: dict) -> bool:
     """
-    Vérifie la signature HMAC de Shopify pour l'OAuth.
+    Vérifie la signature HMAC de Shopify.
     """
-    hmac_param = query_params.get("hmac")
+    hmac_param = query_params.get('hmac')
     if not hmac_param:
         return False
     
-    # Créer une copie sans hmac et signature
-    params = {k: v for k, v in query_params.items() if k not in ["hmac", "signature"]}
+    # Retirer hmac et signature de la vérification
+    params = {k: v for k, v in query_params.items() if k not in ['hmac', 'signature']}
     
     # Trier et créer la query string
     sorted_params = sorted(params.items())
-    query_string = "&".join([f"{k}={v}" for k, v in sorted_params])
+    query_string = '&'.join([f"{k}={v}" for k, v in sorted_params])
     
     # Calculer le HMAC
     computed_hmac = hmac.new(
-        SHOPIFY_API_SECRET.encode("utf-8"),
-        query_string.encode("utf-8"),
+        SHOPIFY_API_SECRET.encode('utf-8'),
+        query_string.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
     
     return hmac.compare_digest(computed_hmac, hmac_param)
 
 
-@router.get("/auth")
-async def auth_start(shop: str = Query(...)):
+@router.get("/login")
+async def login_page(shop: str = Query(None)):
     """
-    Point d'entrée pour l'installation de l'app.
-    Redirige vers Shopify OAuth.
+    Page de login - redirige vers l'OAuth Shopify.
     """
-    print(f"🚀 OAuth start requested - shop: {shop}")
+    if not shop:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Shop parameter is required"}
+        )
     
-    if not shop.endswith(".myshopify.com"):
+    # Normaliser le shop domain
+    if not shop.endswith('.myshopify.com'):
         shop = f"{shop}.myshopify.com"
     
-    # URL de redirection après autorisation
-    redirect_uri = f"{APPLICATION_URL}/auth/callback"
+    # Rediriger vers l'OAuth
+    return RedirectResponse(url=f"/auth/shopify?shop={shop}")
+
+
+@router.get("/auth/shopify")
+async def initiate_oauth(
+    shop: str = Query(..., description="Shop domain (e.g., mystore.myshopify.com)"),
+    request: Request = None
+):
+    """
+    Initie le flux OAuth avec Shopify.
+    Redirige vers la page d'autorisation Shopify.
+    """
+    if not SHOPIFY_API_KEY or not SHOPIFY_API_SECRET:
+        raise HTTPException(
+            status_code=500,
+            detail="Shopify credentials not configured"
+        )
     
-    # Construire l'URL OAuth Shopify
-    auth_url = (
-        f"https://{shop}/admin/oauth/authorize"
-        f"?client_id={SHOPIFY_API_KEY}"
-        f"&scope={SCOPES}"
-        f"&redirect_uri={redirect_uri}"
-    )
+    # Normaliser le shop domain
+    if not shop.endswith('.myshopify.com'):
+        shop = f"{shop}.myshopify.com"
     
-    print(f"🔄 Redirecting to Shopify OAuth: {auth_url[:100]}...")
+    # Générer un state nonce pour la sécurité
+    state = secrets.token_urlsafe(32)
+    
+    # Stocker le state (dans une vraie app, utiliser Redis ou session)
+    # Pour l'instant, on le passe dans l'URL de callback
+    
+    # Construire l'URL d'autorisation Shopify
+    redirect_uri = f"{APP_URL}/auth/callback"
+    
+    auth_params = {
+        'client_id': SHOPIFY_API_KEY,
+        'scope': SCOPES,
+        'redirect_uri': redirect_uri,
+        'state': state,
+        'grant_options[]': 'per-user'
+    }
+    
+    auth_url = f"https://{shop}/admin/oauth/authorize?{urlencode(auth_params)}"
+    
+    # Rediriger vers Shopify
     return RedirectResponse(url=auth_url)
 
 
 @router.get("/auth/callback")
-async def auth_callback(
-    request: Request,
-    shop: str = Query(...),
-    code: str = Query(...),
-    hmac: str = Query(None),
+async def oauth_callback(
+    code: str = Query(None),
+    shop: str = Query(None),
     state: str = Query(None),
-    host: str = Query(None)  # Paramètre host pour apps embarquées
+    hmac: str = Query(None),
+    request: Request = None
 ):
     """
-    Callback OAuth après autorisation par le merchant.
-    Échange le code contre un access token.
+    Callback OAuth - reçoit le code et échange contre access_token.
     """
-    print(f"🔐 OAuth callback received - shop: {shop}, host: {host}")
+    if not code or not shop:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing code or shop parameter"
+        )
     
-    # Vérifier HMAC
-    query_params = dict(request.query_params)
-    if not verify_hmac(query_params):
-        print(f"❌ HMAC verification failed")
-        raise HTTPException(status_code=401, detail="Invalid HMAC signature")
-    
-    print(f"✅ HMAC verified successfully")
-    
-    if not shop.endswith(".myshopify.com"):
+    # Normaliser le shop domain
+    if not shop.endswith('.myshopify.com'):
         shop = f"{shop}.myshopify.com"
     
-    # Échanger le code contre un access token
+    # Vérifier la signature HMAC
+    query_params = dict(request.query_params)
+    if not verify_hmac(query_params):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid HMAC signature"
+        )
+    
+    # Échanger le code contre un access_token
     token_url = f"https://{shop}/admin/oauth/access_token"
     
-    payload = {
-        "client_id": SHOPIFY_API_KEY,
-        "client_secret": SHOPIFY_API_SECRET,
-        "code": code
+    token_data = {
+        'client_id': SHOPIFY_API_KEY,
+        'client_secret': SHOPIFY_API_SECRET,
+        'code': code
     }
     
     try:
-        response = requests.post(token_url, json=payload)
+        response = requests.post(token_url, json=token_data, timeout=10)
         response.raise_for_status()
-        token_data = response.json()
-        access_token = token_data.get("access_token")
+        token_response = response.json()
         
+        access_token = token_response.get('access_token')
         if not access_token:
-            raise HTTPException(status_code=400, detail="No access token received")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to get access token from Shopify"
+            )
         
-        # Sauvegarder ou mettre à jour le shop en DB
-        try:
-            db = next(get_db())
-            shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-            
-            if shop_record:
-                # Mise à jour
-                shop_record.access_token = access_token
-                shop_record.is_active = True
-                shop_record.last_active_at = datetime.utcnow()
-                if not shop_record.installed_at:
-                    shop_record.installed_at = datetime.utcnow()
-            else:
-                # Création
-                shop_record = Shop(
-                    domain=shop,
-                    access_token=access_token,
-                    is_active=True,
-                    installed_at=datetime.utcnow(),
-                    last_active_at=datetime.utcnow()
-                )
-                db.add(shop_record)
-            
-            db.commit()
-        except Exception as db_error:
-            # Log l'erreur mais continue quand même (l'app peut fonctionner sans DB)
-            print(f"⚠️ Database error during OAuth callback: {db_error}")
-            # Ne pas bloquer l'installation si la DB n'est pas disponible
+        # Sauvegarder ou mettre à jour le shop dans la DB
+        db = next(get_db())
+        shop_record = db.query(Shop).filter(Shop.domain == shop).first()
         
-        # Rediriger vers l'app embarquée
-        # Pour les apps embarquées, utiliser le paramètre host de Shopify
-        if host:
-            # host est un token base64 fourni par Shopify pour les apps embarquées
-            app_url = f"{APPLICATION_URL}/app?shop={shop}&host={host}"
+        if shop_record:
+            # Mise à jour
+            shop_record.access_token = access_token
+            shop_record.is_active = True
+            shop_record.last_active_at = datetime.utcnow()
+            if not shop_record.installed_at:
+                shop_record.installed_at = datetime.utcnow()
         else:
-            # Fallback si host n'est pas fourni
-            shop_name = shop.replace('.myshopify.com', '')
-            app_url = f"{APPLICATION_URL}/app?shop={shop}"
+            # Nouveau shop
+            shop_record = Shop(
+                domain=shop,
+                access_token=access_token,
+                installed_at=datetime.utcnow(),
+                last_active_at=datetime.utcnow(),
+                is_active=True
+            )
+            db.add(shop_record)
         
-        print(f"✅ OAuth successful, redirecting to: {app_url}")
+        db.commit()
+        db.close()
         
-        # Redirection pour apps embarquées Shopify avec App Bridge
-        return HTMLResponse(content=f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Installation réussie</title>
-            <meta charset="UTF-8">
-            <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
-            <script>
-                // Attendre que App Bridge soit chargé
-                function redirectToApp() {{
-                    const appUrl = "{app_url}";
-                    console.log("🔄 Redirecting to:", appUrl);
-                    
-                    // Pour les apps embarquées, utiliser App Bridge Redirect si disponible
-                    if (window.AppBridge && window.AppBridge.default) {{
-                        try {{
-                            const app = window.AppBridge.default({{
-                                apiKey: "{SHOPIFY_API_KEY or ""}",
-                                host: "{host or ""}",
-                                shop: "{shop}"
-                            }});
-                            
-                            // Utiliser App Bridge Redirect pour une redirection propre
-                            if (app && app.getState) {{
-                                window.location.href = appUrl;
-                            }} else {{
-                                // Fallback: redirection standard
-                                if (window.top !== window.self) {{
-                                    window.top.location.href = appUrl;
-                                }} else {{
-                                    window.location.href = appUrl;
-                                }}
-                            }}
-                        }} catch (error) {{
-                            console.error("App Bridge error:", error);
-                            // Fallback: redirection standard
-                            window.location.href = appUrl;
-                        }}
-                    }} else {{
-                        // Fallback: redirection standard si App Bridge n'est pas disponible
-                        if (window.top !== window.self) {{
-                            window.top.location.href = appUrl;
-                        }} else {{
-                            window.location.href = appUrl;
-                        }}
-                    }}
-                }}
-                
-                // Essayer immédiatement
-                if (document.readyState === 'loading') {{
-                    document.addEventListener('DOMContentLoaded', redirectToApp);
-                }} else {{
-                    redirectToApp();
-                }}
-                
-                // Timeout de sécurité
-                setTimeout(function() {{
-                    if (window.location.href.indexOf('/app') === -1) {{
-                        console.log("⏰ Timeout, forcing redirect");
-                        window.location.href = "{app_url}";
-                    }}
-                }}, 2000);
-            </script>
-        </head>
-        <body style="font-family: system-ui; text-align: center; padding: 50px; background: #f5f5f5;">
-            <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 500px; margin: 100px auto;">
-                <h1 style="color: #10b981; margin-bottom: 20px;">✅ Installation réussie!</h1>
-                <p style="color: #64748b; margin-bottom: 30px;">Redirection vers l'application...</p>
-                <p><a href="{app_url}" style="color: #6366f1; text-decoration: none; font-weight: 500;">Cliquez ici si la redirection ne fonctionne pas</a></p>
-            </div>
-        </body>
-        </html>
-        """)
+        # Rediriger vers l'app embedded
+        # Pour une app embedded, Shopify redirige automatiquement vers application_url
+        # On peut aussi rediriger directement vers l'application_url avec le shop en paramètre
+        redirect_url = f"{APP_URL}?shop={shop}"
+        
+        return RedirectResponse(url=redirect_url)
         
     except requests.RequestException as e:
-        error_msg = f"Failed to exchange token: {str(e)}"
-        print(f"❌ OAuth callback error: {error_msg}")
-        raise HTTPException(status_code=500, detail=error_msg)
+        print(f"❌ OAuth token exchange failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to exchange OAuth code: {str(e)}"
+        )
     except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        print(f"❌ OAuth callback unexpected error: {error_msg}")
-        raise HTTPException(status_code=500, detail=error_msg)
-
-
-@router.get("/auth/shopify/callback")
-async def auth_shopify_callback(request: Request):
-    """
-    Alias pour /auth/callback (compatibilité).
-    """
-    return await auth_callback(request)
+        print(f"❌ OAuth callback error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"OAuth callback error: {str(e)}"
+        )
 
 
 @router.get("/api/auth/callback")
-async def auth_api_callback(request: Request):
+async def api_oauth_callback(
+    code: str = Query(None),
+    shop: str = Query(None),
+    state: str = Query(None),
+    hmac: str = Query(None),
+    request: Request = None
+):
     """
-    Alias pour /auth/callback (compatibilité API).
+    Callback OAuth alternatif (pour compatibilité).
+    Même logique que /auth/callback.
     """
-    return await auth_callback(request)
+    return await oauth_callback(code, shop, state, hmac, request)
 
+
+@router.get("/auth/shopify/callback")
+async def shopify_oauth_callback(
+    code: str = Query(None),
+    shop: str = Query(None),
+    state: str = Query(None),
+    hmac: str = Query(None),
+    request: Request = None
+):
+    """
+    Callback OAuth alternatif (pour compatibilité).
+    Même logique que /auth/callback.
+    """
+    return await oauth_callback(code, shop, state, hmac, request)

@@ -1,17 +1,7 @@
-console.log("📜 app.js loaded");
-
 document.addEventListener("DOMContentLoaded", function() {
-    console.log("📜 DOMContentLoaded fired in app.js");
 
     document.body.classList.add('loaded');
     document.body.style.opacity = "1";
-
-    // ==========================================
-    // CONFIGURATION - URL Backend
-    // ==========================================
-    // Utiliser l'origine actuelle pour supporter dev/prod
-    const API_BASE_URL = window.location.origin;
-    console.log("🌐 API_BASE_URL:", API_BASE_URL);
 
     const params = new URLSearchParams(window.location.search);
     const mode = params.get('mode');
@@ -67,105 +57,62 @@ document.addEventListener("DOMContentLoaded", function() {
         if(shop) sessionStorage.setItem('shop', shop);
     } catch(e) {}
 
-    console.log("🪧 Shop actif:", shop, "| Mode:", mode, "| URL:", window.location.href);
+    console.log("🪧 Shop actif:", shop, "| Mode:", mode);
 
     if (!shop) {
         console.error("❌ ERREUR: Shop introuvable!");
-        console.error("   URL params:", window.location.search);
-        console.error("   SessionStorage shop:", sessionStorage.getItem('shop'));
-        // Ne pas bloquer l'app, juste afficher un message
-        const errorDiv = document.createElement('div');
-        errorDiv.style.cssText = 'padding: 20px; background: #fee; border: 1px solid #fcc; margin: 20px; border-radius: 8px;';
-        errorDiv.innerHTML = '<h3>⚠️ Configuration Error</h3><p>Shop parameter not found. Please check the URL or reload the page.</p><p>Current URL: ' + window.location.href + '</p>';
-        document.body.insertBefore(errorDiv, document.body.firstChild);
+        if (mode !== 'client') {
+            alert("Configuration error: Shop not found. Please reload the page.");
+        }
     }
 
     async function getSessionToken() {
-        try {
-            if (window.app && window.app.getState) {
-                const state = await window.app.getState();
-                if (state && state.token) return state.token;
-            }
-            if (window.shopify && window.shopify.id) {
-                return await shopify.id.getToken();
-            }
-        } catch (e) {
-            console.warn("⚠️ Could not get session token:", e);
-        }
+        if (window.shopify && window.shopify.id) return await shopify.id.getToken();
         return null;
     }
 
     async function authenticatedFetch(url, options = {}) {
         try {
-            console.log("🌐 Fetching:", url);
             const token = await getSessionToken();
             const headers = options.headers || {};
-            if (token) {
-                headers['Authorization'] = `Bearer ${token}`;
-                console.log("🔑 Using session token");
-            } else {
-                console.warn("⚠️ No session token available");
-            }
+            if (token) headers['Authorization'] = `Bearer ${token}`;
             const res = await fetch(url, { ...options, headers });
-            console.log("📥 Response:", res.status, res.statusText);
             if (res.status === 401 && shop && mode !== 'client') { 
-                console.error("❌ Unauthorized - redirecting to login");
                 window.top.location.href = `/login?shop=${shop}`; 
                 return null; 
             }
             return res;
-        } catch (error) {
-            console.error("❌ Fetch error:", error);
+        } catch (error) { 
             throw error; 
         }
     }
 
     if(shop) {
-        console.log("✅ Shop found, initializing...");
-        if (mode === 'client') {
-            console.log("🛒 Initializing client mode");
-            initClientMode();
-        } else {
-            console.log("⚙️ Initializing admin mode");
-            initAdminMode(shop);
-        }
-    } else {
-        console.warn("⚠️ No shop found, app will not make API calls");
+        if (mode === 'client') initClientMode();
+        else initAdminMode(shop);
     }
 
     // --- DASHBOARD ---
     async function initAdminMode(s) {
-        console.log("🚀 initAdminMode called with shop:", s);
-        console.log("🌐 Making request to:", `${API_BASE_URL}/api/admin/dashboard?shop=${s}`);
-        
-        try {
-            const res = await authenticatedFetch(`${API_BASE_URL}/api/admin/dashboard?shop=${s}`);
-            console.log("📥 Dashboard response:", res);
-            
-            if (res && res.ok) {
-                const data = await res.json();
-                console.log("✅ Dashboard data received:", data);
+        const res = await authenticatedFetch(`/api/get-data?shop=${s}`);
+        if (res && res.ok) {
+            const data = await res.json();
 
-                updateDashboardStats(data.credits || 0);
-                updateVIPStatus(data.lifetime || 0);
+            updateDashboardStats(data.credits || 0);
+            updateVIPStatus(data.lifetime || 0);
 
-                const tryEl = document.getElementById('stat-tryons');
-                const atcEl = document.getElementById('stat-atc');
-                if(tryEl) tryEl.innerText = data.usage || 0;
-                if(atcEl) atcEl.innerText = data.atc || 0;
+            const tryEl = document.getElementById('stat-tryons');
+            const atcEl = document.getElementById('stat-atc');
+            if(tryEl) tryEl.innerText = data.usage || 0;
+            if(atcEl) atcEl.innerText = data.atc || 0;
 
-                if(data.widget) {
-                    document.getElementById('ws-text').value = data.widget.text || "Try It On Now ✨";
-                    document.getElementById('ws-color').value = data.widget.bg || "#000000";
-                    document.getElementById('ws-text-color').value = data.widget.color || "#ffffff";
-                    if(data.security) document.getElementById('ws-limit').value = data.security.max_tries || 5;
-                    window.updateWidgetPreview();
-                }
-            } else {
-                console.error("❌ Dashboard request failed:", res ? res.status : "no response", res ? res.statusText : "no response");
+            if(data.widget) {
+                document.getElementById('ws-text').value = data.widget.text || "Try It On Now ✨";
+                document.getElementById('ws-color').value = data.widget.bg || "#000000";
+                document.getElementById('ws-text-color').value = data.widget.color || "#ffffff";
+                if(data.security) document.getElementById('ws-limit').value = data.security.max_tries || 5;
+                window.updateWidgetPreview();
             }
-        } catch (error) {
-            console.error("❌ Error in initAdminMode:", error);
         }
     }
 
@@ -217,7 +164,7 @@ document.addEventListener("DOMContentLoaded", function() {
             max_tries: parseInt(document.getElementById('ws-limit').value) || 5
         };
         try {
-            const res = await authenticatedFetch(`${API_BASE_URL}/api/admin/settings`, {
+            const res = await authenticatedFetch('/api/save-settings', {
                 method: 'POST', 
                 headers: {'Content-Type': 'application/json'}, 
                 body: JSON.stringify(settings)
@@ -240,7 +187,7 @@ document.addEventListener("DOMContentLoaded", function() {
     window.trackATC = async function() {
         if(shop) {
             try {
-                await fetch(`${API_BASE_URL}/api/admin/track-atc?shop=${shop}`, {
+                await fetch('/api/track-atc', {
                     method: 'POST', 
                     headers: {'Content-Type': 'application/json'}, 
                     body: JSON.stringify({ shop: shop })
@@ -302,8 +249,41 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
-    // --- TEST CORS (SUPPRIMÉ POUR PRODUCTION) ---
-    // Fonction de test supprimée. Pour tester la connexion, utiliser les fonctionnalités normales de l'app.
+    // --- TEST CORS (TEMPORAIRE) ---
+    window.testCORS = async function() {
+        console.log("🧪 TEST CORS/PROXY DÉMARRÉ");
+        
+        let testUrl;
+        if (mode === 'client' || window.self !== window.top) {
+            // En mode client, utiliser le proxy Shopify
+            testUrl = `https://${shop}/apps/tryon/test`;
+            console.log("   Mode: PROXY via Shopify");
+        } else {
+            // En mode admin, direct
+            testUrl = 'https://stylelab-vtonn.onrender.com/api/test-cors';
+            console.log("   Mode: DIRECT");
+        }
+        
+        console.log("   URL:", testUrl);
+        
+        try {
+            const response = await fetch(testUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ test: true })
+            });
+            
+            console.log("✅ Réponse reçue:", response.status);
+            const data = await response.json();
+            console.log("   Data:", data);
+            alert(`✅ CONNECTION OK: ${data.message}`);
+        } catch (error) {
+            console.error("❌ Erreur:", error);
+            alert(`❌ CONNECTION FAILED: ${error.message}`);
+        }
+    }
 
     // --- GENERATE (VERSION CORRIGÉE CORS) ---
     window.generate = async function(event) {
@@ -413,7 +393,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 console.log("🔄 Mode iframe - Utilisation du Proxy Shopify");
             } else {
                 // Sinon, URL directe (admin mode)
-                apiUrl = `${API_BASE_URL}/api/generate`;
+                apiUrl = 'https://stylelab-vtonn.onrender.com/api/generate';
                 console.log("🏠 Mode admin - URL directe");
             }
             
@@ -547,7 +527,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 custom_amount: customAmount || 0
             };
 
-            const res = await authenticatedFetch(`${API_BASE_URL}/api/admin/buy-credits`, {
+            const res = await authenticatedFetch('/api/buy-credits', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
@@ -597,7 +577,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 custom_amount: amount
             };
 
-            const res = await authenticatedFetch(`${API_BASE_URL}/api/admin/buy-credits`, {
+            const res = await authenticatedFetch('/api/buy-credits', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
