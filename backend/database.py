@@ -188,6 +188,12 @@ def init_db():
     """
     global engine, SessionLocal
     
+    # Vérifier AVANT tout si l'URL est Render
+    if DATABASE_URL and "dpg-" in DATABASE_URL:
+        print(f"⚠️  BLOCKED: Render URL detected in init_db, skipping database initialization")
+        print(f"   URL contains: dpg-d57fit63jp1c73auvnc0-a")
+        return
+    
     if not DATABASE_URL:
         print("⚠️  DATABASE_URL not set, skipping database initialization")
         return
