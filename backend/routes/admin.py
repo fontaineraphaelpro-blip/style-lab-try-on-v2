@@ -425,7 +425,7 @@ async def initiate_credit_purchase(
         # Utiliser application_charges pour les crédits one-time
         billing_url = f"https://{shop.domain}/admin/api/2025-01/application_charges.json"
         
-        APPLICATION_URL = os.getenv("APPLICATION_URL", "https://style-lab-try-on-v2-1.onrender.com")
+        APPLICATION_URL = os.getenv("APPLICATION_URL", "https://style-lab-try-on-v2.up.railway.app")
         ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
         
         charge_data = {
@@ -466,7 +466,7 @@ async def initiate_credit_purchase(
             "purchase_id": purchase.id,
             "credits": credits,
             "price_usd": price,
-            "confirmation_url": confirmation_url or f"{os.getenv('APPLICATION_URL', 'https://style-lab-try-on-v2-1.onrender.com')}/billing/confirm?id={purchase.id}"
+            "confirmation_url": confirmation_url or f"{os.getenv('APPLICATION_URL', 'https://style-lab-try-on-v2.up.railway.app')}/billing/confirm?id={purchase.id}"
         }
         
     except requests.RequestException as e:
@@ -551,7 +551,7 @@ async def billing_confirm(
             <head>
                 <title>Crédits activés</title>
                 <script>
-                    window.top.location.href = "{os.getenv('APPLICATION_URL', 'https://style-lab-try-on-v2-1.onrender.com')}/app";
+                    window.top.location.href = "{os.getenv('APPLICATION_URL', 'https://style-lab-try-on-v2.up.railway.app')}/app";
                 </script>
             </head>
             <body>
