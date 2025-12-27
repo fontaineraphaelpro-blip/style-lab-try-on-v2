@@ -513,12 +513,25 @@ document.addEventListener("DOMContentLoaded", function() {
     };
 
     // --- BUY CREDITS (PACKS) ---
-    window.buy = async function(packId, customAmount, btnElement) {
-        if(!shop) return alert("Shop not detected!");
+    window.buy = async function(packId, customAmount, btnElement, event) {
+        // Empêcher la propagation de l'événement
+        if(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
         
-        const originalContent = btnElement.innerHTML;
-        btnElement.innerHTML = "Processing...";
-        btnElement.disabled = true;
+        if(!shop) {
+            alert("Shop not detected! Please reload the page.");
+            return;
+        }
+        
+        console.log("🛒 Achat de crédits:", { packId, customAmount, shop });
+        
+        const originalContent = btnElement ? btnElement.innerHTML : "Buy";
+        if(btnElement) {
+            btnElement.innerHTML = "Processing...";
+            btnElement.disabled = true;
+        }
 
         try {
             const payload = {
@@ -527,29 +540,45 @@ document.addEventListener("DOMContentLoaded", function() {
                 custom_amount: customAmount || 0
             };
 
+            console.log("📤 Envoi requête:", payload);
+
             const res = await authenticatedFetch('/api/buy-credits', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
             });
 
+            console.log("📥 Réponse reçue:", res);
+
             if(res && res.ok) {
                 const data = await res.json();
+                console.log("✅ Données reçues:", data);
+                
                 if(data.confirmation_url) {
-                    window.top.location.href = data.confirmation_url;
+                    console.log("🔄 Redirection vers:", data.confirmation_url);
+                    // Utiliser window.top pour sortir de l'iframe si nécessaire
+                    if(window.top !== window.self) {
+                        window.top.location.href = data.confirmation_url;
+                    } else {
+                        window.location.href = data.confirmation_url;
+                    }
                 } else {
-                    alert("Error: No confirmation URL received");
+                    console.error("❌ Pas de confirmation_url dans la réponse");
+                    alert("Error: No confirmation URL received. Response: " + JSON.stringify(data));
                 }
             } else {
-                const errorData = await res.json().catch(() => ({}));
-                alert("Purchase failed: " + (errorData.error || "Unknown error"));
+                const errorData = await res.json().catch(() => ({ error: "Failed to parse error response" }));
+                console.error("❌ Erreur:", errorData);
+                alert("Purchase failed: " + (errorData.error || errorData.detail || "Unknown error"));
             }
         } catch(e) {
-            console.error("Buy Error:", e);
-            alert("Network error during purchase");
+            console.error("❌ Buy Error:", e);
+            alert("Network error during purchase: " + e.message);
         } finally {
-            btnElement.innerHTML = originalContent;
-            btnElement.disabled = false;
+            if(btnElement) {
+                btnElement.innerHTML = originalContent;
+                btnElement.disabled = false;
+            }
         }
     };
 

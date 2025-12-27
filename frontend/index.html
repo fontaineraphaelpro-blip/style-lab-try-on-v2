@@ -60,24 +60,24 @@
                 <h2 class="section-title">Purchase Credits</h2>
                 <p class="section-subtitle">1 Credit = 1 Virtual Try-On Result</p>
                 <div class="pricing-row">
-                    <div class="pricing-card" onclick="buy('pack_10', 0, this)">
+                    <div class="pricing-card">
                         <div class="pc-header"><span class="pc-name">Starter Pack</span><span class="pc-credits">10</span><span class="pc-unit">Credits</span></div>
                         <div class="pc-price"><span class="currency">€</span>4.99<span class="per-try">€0.50 / try</span></div>
                         <ul class="pc-features"><li><i class="fa-solid fa-check"></i> Standard Quality</li><li><i class="fa-solid fa-check"></i> Email Support</li><li><i class="fa-solid fa-check"></i> No Expiration</li></ul>
-                        <button class="btn-buy">Buy Starter</button>
+                        <button class="btn-buy" onclick="buy('pack_10', 0, this, event)">Buy Starter</button>
                     </div>
-                    <div class="pricing-card featured" onclick="buy('pack_30', 0, this)">
+                    <div class="pricing-card featured">
                         <div class="popular-badge">MOST POPULAR</div>
                         <div class="pc-header"><span class="pc-name">Growth Pack</span><span class="pc-credits">30</span><span class="pc-unit">Credits</span></div>
                         <div class="pc-price"><span class="currency">€</span>12.99<span class="per-try highlight">€0.43 / try</span></div>
                         <ul class="pc-features"><li><i class="fa-solid fa-check"></i> <strong>High Speed GPU</strong></li><li><i class="fa-solid fa-check"></i> <strong>Best Conversion Rate</strong></li><li><i class="fa-solid fa-check"></i> Priority Support</li></ul>
-                        <button class="btn-buy featured-btn">Buy Growth 🚀</button>
+                        <button class="btn-buy featured-btn" onclick="buy('pack_30', 0, this, event)">Buy Growth 🚀</button>
                     </div>
-                    <div class="pricing-card" onclick="buy('pack_100', 0, this)">
+                    <div class="pricing-card">
                         <div class="pc-header"><span class="pc-name">Business Pack</span><span class="pc-credits">100</span><span class="pc-unit">Credits</span></div>
                         <div class="pc-price"><span class="currency">€</span>29.99<span class="per-try">€0.30 / try</span></div>
                         <ul class="pc-features"><li><i class="fa-solid fa-check"></i> Bulk Discount</li><li><i class="fa-solid fa-check"></i> Dedicated Manager</li><li><i class="fa-solid fa-check"></i> API Access</li></ul>
-                        <button class="btn-buy">Buy Business</button>
+                        <button class="btn-buy" onclick="buy('pack_100', 0, this, event)">Buy Business</button>
                     </div>
                 </div>
                 <div class="bulk-order-section"><p class="bulk-text">Need massive volume? <span class="bulk-trigger" onclick="document.getElementById('custom-panel').style.display='flex'">Open Custom Order</span></p><div id="custom-panel" class="custom-order-panel" style="display:none;"><div class="custom-input-group-pro"><input type="number" id="customAmount" placeholder="500" value="500"></div><button onclick="buyCustom(this)" class="btn-custom-action">Get Pack Now</button></div></div>
