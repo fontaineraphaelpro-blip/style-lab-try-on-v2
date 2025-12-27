@@ -1,0 +1,4 @@
+# Requirements file at root for Railway detection
+# Actual requirements are in backend/requirements.txt
+-r backend/requirements.txt
+
