@@ -16,6 +16,10 @@ from datetime import datetime
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# DEBUG: Afficher l'URL complète pour debug
+if DATABASE_URL:
+    print(f"🔍 DEBUG: Raw DATABASE_URL from env: {DATABASE_URL[:100]}...")
+
 # Fix pour Render (remplace postgres:// par postgresql://)
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -23,10 +27,11 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 # Vérifier si l'URL contient un hostname Render (dpg-*) et l'ignorer
 if DATABASE_URL and "dpg-" in DATABASE_URL:
     print(f"⚠️  WARNING: Detected Render database URL (dpg-*), ignoring it")
-    print(f"   URL: {DATABASE_URL[:80]}...")
+    print(f"   Full URL: {DATABASE_URL}")
     DATABASE_URL = None  # Ignorer l'URL Render
+    print("✅ DATABASE_URL set to None - app will start without database")
 
-print(f"🔧 Database URL: {DATABASE_URL[:50]}..." if DATABASE_URL else "⚠️ No DATABASE_URL")
+print(f"🔧 Database URL: {DATABASE_URL[:50]}..." if DATABASE_URL else "⚠️ No DATABASE_URL (will skip DB initialization)")
 
 # Engine SQLAlchemy (créé lazy - seulement si DATABASE_URL existe)
 engine = None
