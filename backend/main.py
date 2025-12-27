@@ -462,28 +462,81 @@ async def debug_shops(request: Request):
     Route de debug pour vérifier les shops dans la DB.
     À SUPPRIMER en production.
     """
-    from database import get_db, Shop
+    from database import SessionLocal, Shop
+    from database import test_connection
     
-    db = next(get_db())
-    shops = db.query(Shop).all()
+    # Tester la connexion d'abord
+    db_status = test_connection()
     
+    db = None
     shops_data = []
-    for shop in shops:
-        shops_data.append({
-            "domain": shop.domain,
-            "credits": shop.credits,
-            "lifetime_credits": shop.lifetime_credits,
-            "is_active": shop.is_active,
-            "installed_at": shop.installed_at.isoformat() if shop.installed_at else None,
-            "last_active_at": shop.last_active_at.isoformat() if shop.last_active_at else None,
-            "has_token": bool(shop.access_token)
-        })
+    error_msg = None
     
-    db.close()
+    try:
+        db = SessionLocal()
+        shops = db.query(Shop).all()
+        
+        for shop in shops:
+            shops_data.append({
+                "domain": shop.domain,
+                "credits": shop.credits,
+                "lifetime_credits": shop.lifetime_credits,
+                "is_active": shop.is_active,
+                "installed_at": shop.installed_at.isoformat() if shop.installed_at else None,
+                "last_active_at": shop.last_active_at.isoformat() if shop.last_active_at else None,
+                "has_token": bool(shop.access_token),
+                "token_length": len(shop.access_token) if shop.access_token else 0
+            })
+    except Exception as e:
+        error_msg = str(e)
+        import traceback
+        traceback.print_exc()
+    finally:
+        if db:
+            db.close()
     
     return {
+        "db_connection": db_status,
         "total_shops": len(shops_data),
-        "shops": shops_data
+        "shops": shops_data,
+        "error": error_msg
+    }
+
+@app.get("/api/debug/db-test")
+async def debug_db_test():
+    """
+    Route de test pour vérifier la connexion DB.
+    """
+    from database import test_connection, SessionLocal, Shop
+    import os
+    
+    db_url = os.getenv("DATABASE_URL", "NOT SET")
+    # Masquer le mot de passe
+    if "@" in db_url:
+        parts = db_url.split("@")
+        if len(parts) > 1:
+            db_url_display = "***@" + parts[1]
+        else:
+            db_url_display = "***"
+    else:
+        db_url_display = db_url
+    
+    connection_test = test_connection()
+    
+    # Essayer de compter les shops
+    shop_count = 0
+    try:
+        db = SessionLocal()
+        shop_count = db.query(Shop).count()
+        db.close()
+    except Exception as e:
+        pass
+    
+    return {
+        "database_url": db_url_display,
+        "connection_test": connection_test,
+        "shop_count": shop_count,
+        "status": "ok" if connection_test else "error"
     }
 
 
