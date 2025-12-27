@@ -23,15 +23,11 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 print(f"🔧 Database URL: {DATABASE_URL[:50]}..." if DATABASE_URL else "⚠️ No DATABASE_URL")
 
 # Engine SQLAlchemy
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is required")
-
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
-    pool_recycle=300,
     echo=False  # Mettre à True pour debug SQL
 )
 
@@ -142,13 +138,18 @@ def init_db():
     """
     Crée toutes les tables dans la base de données.
     """
+    if not DATABASE_URL:
+        print("⚠️  DATABASE_URL not set, skipping database initialization")
+        return
+    
     try:
         print("🔧 Initializing database...")
         Base.metadata.create_all(bind=engine)
         print("✅ Database tables created successfully")
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
-        raise
+        # Ne pas faire crash l'app si la DB n'est pas accessible
+        print("⚠️  Continuing without database...")
 
 
 def get_db():
