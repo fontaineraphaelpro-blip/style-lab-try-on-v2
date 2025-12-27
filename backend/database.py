@@ -20,6 +20,12 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+# Vérifier si l'URL contient un hostname Render (dpg-*) et l'ignorer
+if DATABASE_URL and "dpg-" in DATABASE_URL:
+    print(f"⚠️  WARNING: Detected Render database URL (dpg-*), ignoring it")
+    print(f"   URL: {DATABASE_URL[:80]}...")
+    DATABASE_URL = None  # Ignorer l'URL Render
+
 print(f"🔧 Database URL: {DATABASE_URL[:50]}..." if DATABASE_URL else "⚠️ No DATABASE_URL")
 
 # Engine SQLAlchemy (créé lazy - seulement si DATABASE_URL existe)
