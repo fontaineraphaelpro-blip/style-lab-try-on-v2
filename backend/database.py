@@ -235,6 +235,15 @@ def get_db():
         def my_endpoint(db: Session = Depends(get_db)):
             ...
     """
+    global SessionLocal
+    
+    # Initialiser l'engine si pas déjà fait
+    _init_engine()
+    
+    if not SessionLocal:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Database not available")
+    
     db = SessionLocal()
     try:
         yield db
