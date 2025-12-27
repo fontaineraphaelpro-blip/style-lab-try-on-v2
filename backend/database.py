@@ -31,8 +31,7 @@ engine = create_engine(
     echo=False  # Mettre à True pour debug SQL
 )
 
-# Session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Session factory (défini plus haut si DATABASE_URL existe)
 
 # Base pour les modèles
 Base = declarative_base()

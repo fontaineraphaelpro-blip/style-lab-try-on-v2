@@ -64,6 +64,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️  Database initialization failed: {e}")
         print("   App will continue but database features may not work")
+        # Ne pas faire crash l'app
+        pass
     
     # Vérifier les credentials Shopify
     if not SHOPIFY_API_KEY or not SHOPIFY_API_SECRET:
