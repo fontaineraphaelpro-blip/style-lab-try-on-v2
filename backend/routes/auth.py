@@ -55,6 +55,8 @@ async def auth_start(shop: str = Query(...)):
     Point d'entrée pour l'installation de l'app.
     Redirige vers Shopify OAuth.
     """
+    print(f"🚀 OAuth start requested - shop: {shop}")
+    
     if not shop.endswith(".myshopify.com"):
         shop = f"{shop}.myshopify.com"
     
@@ -69,6 +71,7 @@ async def auth_start(shop: str = Query(...)):
         f"&redirect_uri={redirect_uri}"
     )
     
+    print(f"🔄 Redirecting to Shopify OAuth: {auth_url[:100]}...")
     return RedirectResponse(url=auth_url)
 
 

@@ -235,10 +235,31 @@ async def serve_admin_static(path: str, request: Request):
 # ==========================================
 
 @app.get("/")
-async def root():
+async def root(request: Request):
     """
     Page d'accueil API.
+    Pour les apps embarquées Shopify, cette route peut être appelée avec shop/host.
     """
+    query_params = dict(request.query_params)
+    shop = query_params.get("shop")
+    host = query_params.get("host")
+    
+    print(f"📥 Root route called - shop: {shop}, host: {host}, all params: {query_params}")
+    
+    # Si shop est présent mais pas host, c'est peut-être une installation
+    # Rediriger vers /auth pour démarrer OAuth
+    if shop and not host:
+        print(f"🔄 Redirecting to /auth for OAuth installation")
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"/auth?shop={shop}")
+    
+    # Si shop ET host sont présents, rediriger vers /app (app déjà installée)
+    if shop and host:
+        print(f"🔄 Redirecting to /app (app already installed)")
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"/app?shop={shop}&host={host}")
+    
+    # Sinon, retourner l'API info
     return {
         "app": "VTON AI Backend",
         "version": "2.0.0",
