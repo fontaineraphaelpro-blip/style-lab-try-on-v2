@@ -247,6 +247,21 @@
             </div>
         </div>
     </div>
-    <script src="/app/app.js"></script>
+    <script>
+        // Log immédiat pour vérifier que le HTML est chargé
+        console.log("📄 index.html loaded");
+        console.log("📍 Current URL:", window.location.href);
+        console.log("🔑 API Key placeholder:", "{{ api_key }}");
+    </script>
+    <script src="/app/app.js" onerror="console.error('❌ Failed to load app.js')" onload="console.log('✅ app.js script tag loaded')"></script>
+    <script>
+        // Vérifier si app.js a défini des variables globales
+        setTimeout(function() {
+            console.log("🔍 Checking if app.js executed...");
+            if (typeof window.API_BASE_URL === 'undefined') {
+                console.error("❌ app.js did not execute - API_BASE_URL not defined");
+            }
+        }, 1000);
+    </script>
 </body>
 </html>
