@@ -1,7 +1,11 @@
 document.addEventListener("DOMContentLoaded", function() {
+    console.log("🚀 DOM Content Loaded");
+    console.log("📍 URL:", window.location.href);
+    console.log("🔍 Query params:", window.location.search);
 
     document.body.classList.add('loaded');
     document.body.style.opacity = "1";
+    document.body.style.display = "block";
 
     // Récupérer le shop depuis plusieurs sources
     const params = new URLSearchParams(window.location.search);
@@ -135,32 +139,70 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
+    // Toujours initialiser, même si shop n'est pas trouvé (pour debug)
     if(shop) {
-        if (mode === 'client') initClientMode();
-        else initAdminMode(shop);
+        console.log("✅ Shop trouvé, initialisation...");
+        if (mode === 'client') {
+            console.log("🔄 Mode client");
+            initClientMode();
+        } else {
+            console.log("🔄 Mode admin");
+            initAdminMode(shop);
+        }
+    } else {
+        console.error("❌ Shop non trouvé - Affichage du message d'erreur");
+        // Afficher un message d'erreur visible même si shop n'est pas trouvé
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = 'padding: 20px; background: #fee; border: 2px solid #f00; margin: 20px; border-radius: 8px;';
+        errorDiv.innerHTML = '<h2>⚠️ Configuration Error</h2><p>Shop parameter not found. Please reload the page or contact support.</p><p>URL: ' + window.location.href + '</p>';
+        document.body.appendChild(errorDiv);
     }
 
     // --- DASHBOARD ---
     async function initAdminMode(s) {
-        const res = await authenticatedFetch(`/api/get-data?shop=${s}`);
-        if (res && res.ok) {
-            const data = await res.json();
+        console.log("🚀 Initialisation mode admin pour:", s);
+        
+        // Afficher le contenu même si l'API échoue
+        document.body.style.display = 'block';
+        const adminZone = document.getElementById('admin-only-zone');
+        if (adminZone) {
+            adminZone.style.display = 'block';
+        }
+        
+        try {
+            const res = await authenticatedFetch(`/api/get-data?shop=${s}`);
+            console.log("📥 Réponse /api/get-data:", res);
+            
+            if (res && res.ok) {
+                const data = await res.json();
+                console.log("✅ Données reçues:", data);
 
-            updateDashboardStats(data.credits || 0);
-            updateVIPStatus(data.lifetime || 0);
+                updateDashboardStats(data.credits || 0);
+                updateVIPStatus(data.lifetime || 0);
 
-            const tryEl = document.getElementById('stat-tryons');
-            const atcEl = document.getElementById('stat-atc');
-            if(tryEl) tryEl.innerText = data.usage || 0;
-            if(atcEl) atcEl.innerText = data.atc || 0;
+                const tryEl = document.getElementById('stat-tryons');
+                const atcEl = document.getElementById('stat-atc');
+                if(tryEl) tryEl.innerText = data.usage || 0;
+                if(atcEl) atcEl.innerText = data.atc || 0;
 
-            if(data.widget) {
-                document.getElementById('ws-text').value = data.widget.text || "Try It On Now ✨";
-                document.getElementById('ws-color').value = data.widget.bg || "#000000";
-                document.getElementById('ws-text-color').value = data.widget.color || "#ffffff";
-                if(data.security) document.getElementById('ws-limit').value = data.security.max_tries || 5;
-                window.updateWidgetPreview();
+                if(data.widget) {
+                    document.getElementById('ws-text').value = data.widget.text || "Try It On Now ✨";
+                    document.getElementById('ws-color').value = data.widget.bg || "#000000";
+                    document.getElementById('ws-text-color').value = data.widget.color || "#ffffff";
+                    if(data.security) document.getElementById('ws-limit').value = data.security.max_tries || 5;
+                    window.updateWidgetPreview();
+                }
+            } else {
+                console.error("❌ Erreur API /api/get-data:", res?.status, res?.statusText);
+                // Afficher des valeurs par défaut
+                updateDashboardStats(0);
+                updateVIPStatus(0);
             }
+        } catch (error) {
+            console.error("❌ Erreur lors de l'initialisation:", error);
+            // Afficher des valeurs par défaut même en cas d'erreur
+            updateDashboardStats(0);
+            updateVIPStatus(0);
         }
     }
 
