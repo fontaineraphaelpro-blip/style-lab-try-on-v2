@@ -37,6 +37,7 @@ def _init_engine():
     
     try:
         # Créer l'engine avec connect_args pour éviter les erreurs immédiates
+        # Railway internal URLs fonctionnent si les services sont dans le même projet
         engine = create_engine(
             DATABASE_URL,
             pool_pre_ping=True,
@@ -44,12 +45,20 @@ def _init_engine():
             max_overflow=20,
             pool_recycle=300,
             echo=False,  # Mettre à True pour debug SQL
-            connect_args={"connect_timeout": 5}  # Timeout court pour éviter de bloquer
+            connect_args={
+                "connect_timeout": 10,  # Timeout de 10 secondes
+                "sslmode": "prefer"  # SSL optionnel pour Railway
+            }
         )
+        # Tester la connexion immédiatement
+        with engine.connect() as conn:
+            conn.execute("SELECT 1")
+        print("✅ Database engine created and connection tested")
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         return engine
     except Exception as e:
         print(f"⚠️  Failed to create database engine: {e}")
+        print(f"   DATABASE_URL: {DATABASE_URL[:50]}...")
         engine = None
         SessionLocal = None
         return None
