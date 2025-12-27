@@ -19,6 +19,8 @@
             const maxRetries = 50; // 5 secondes max (50 * 100ms)
             
             function initAppBridge() {
+                console.log(`🔄 initAppBridge attempt ${retryCount + 1} - AppBridge:`, !!window.AppBridge, "shop:", shop, "host:", host, "apiKey:", !!apiKey);
+                
                 if (window.AppBridge && shop && host && apiKey) {
                     try {
                         window.app = window.AppBridge.default({
@@ -34,10 +36,16 @@
                         }
                         // Afficher le contenu
                         document.body.style.opacity = "1";
+                        document.body.classList.add('loaded');
                     } catch (error) {
                         console.error("❌ App Bridge initialization error:", error);
                         // Afficher quand même le contenu en cas d'erreur
                         document.body.style.opacity = "1";
+                        document.body.classList.add('loaded');
+                        const fallback = document.getElementById('loading-fallback');
+                        if (fallback) {
+                            fallback.style.display = 'none';
+                        }
                     }
                 } else {
                     retryCount++;
@@ -49,6 +57,7 @@
                         console.error("❌ App Bridge initialization timeout - showing content anyway");
                         // Afficher le contenu même si App Bridge n'est pas initialisé
                         document.body.style.opacity = "1";
+                        document.body.classList.add('loaded');
                         const fallback = document.getElementById('loading-fallback');
                         if (fallback) {
                             fallback.style.display = 'none';

@@ -1,4 +1,7 @@
+console.log("📜 app.js loaded");
+
 document.addEventListener("DOMContentLoaded", function() {
+    console.log("📜 DOMContentLoaded fired in app.js");
 
     document.body.classList.add('loaded');
     document.body.style.opacity = "1";
@@ -8,6 +11,7 @@ document.addEventListener("DOMContentLoaded", function() {
     // ==========================================
     // Utiliser l'origine actuelle pour supporter dev/prod
     const API_BASE_URL = window.location.origin;
+    console.log("🌐 API_BASE_URL:", API_BASE_URL);
 
     const params = new URLSearchParams(window.location.search);
     const mode = params.get('mode');
@@ -63,46 +67,84 @@ document.addEventListener("DOMContentLoaded", function() {
         if(shop) sessionStorage.setItem('shop', shop);
     } catch(e) {}
 
-    console.log("🪧 Shop actif:", shop, "| Mode:", mode);
+    console.log("🪧 Shop actif:", shop, "| Mode:", mode, "| URL:", window.location.href);
 
     if (!shop) {
         console.error("❌ ERREUR: Shop introuvable!");
-        if (mode !== 'client') {
-            alert("Configuration error: Shop not found. Please reload the page.");
-        }
+        console.error("   URL params:", window.location.search);
+        console.error("   SessionStorage shop:", sessionStorage.getItem('shop'));
+        // Ne pas bloquer l'app, juste afficher un message
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = 'padding: 20px; background: #fee; border: 1px solid #fcc; margin: 20px; border-radius: 8px;';
+        errorDiv.innerHTML = '<h3>⚠️ Configuration Error</h3><p>Shop parameter not found. Please check the URL or reload the page.</p><p>Current URL: ' + window.location.href + '</p>';
+        document.body.insertBefore(errorDiv, document.body.firstChild);
     }
 
     async function getSessionToken() {
-        if (window.shopify && window.shopify.id) return await shopify.id.getToken();
+        try {
+            if (window.app && window.app.getState) {
+                const state = await window.app.getState();
+                if (state && state.token) return state.token;
+            }
+            if (window.shopify && window.shopify.id) {
+                return await shopify.id.getToken();
+            }
+        } catch (e) {
+            console.warn("⚠️ Could not get session token:", e);
+        }
         return null;
     }
 
     async function authenticatedFetch(url, options = {}) {
         try {
+            console.log("🌐 Fetching:", url);
             const token = await getSessionToken();
             const headers = options.headers || {};
-            if (token) headers['Authorization'] = `Bearer ${token}`;
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+                console.log("🔑 Using session token");
+            } else {
+                console.warn("⚠️ No session token available");
+            }
             const res = await fetch(url, { ...options, headers });
+            console.log("📥 Response:", res.status, res.statusText);
             if (res.status === 401 && shop && mode !== 'client') { 
+                console.error("❌ Unauthorized - redirecting to login");
                 window.top.location.href = `/login?shop=${shop}`; 
                 return null; 
             }
             return res;
-        } catch (error) { 
+        } catch (error) {
+            console.error("❌ Fetch error:", error);
             throw error; 
         }
     }
 
     if(shop) {
-        if (mode === 'client') initClientMode();
-        else initAdminMode(shop);
+        console.log("✅ Shop found, initializing...");
+        if (mode === 'client') {
+            console.log("🛒 Initializing client mode");
+            initClientMode();
+        } else {
+            console.log("⚙️ Initializing admin mode");
+            initAdminMode(shop);
+        }
+    } else {
+        console.warn("⚠️ No shop found, app will not make API calls");
     }
 
     // --- DASHBOARD ---
     async function initAdminMode(s) {
-        const res = await authenticatedFetch(`${API_BASE_URL}/api/admin/dashboard?shop=${s}`);
-        if (res && res.ok) {
-            const data = await res.json();
+        console.log("🚀 initAdminMode called with shop:", s);
+        console.log("🌐 Making request to:", `${API_BASE_URL}/api/admin/dashboard?shop=${s}`);
+        
+        try {
+            const res = await authenticatedFetch(`${API_BASE_URL}/api/admin/dashboard?shop=${s}`);
+            console.log("📥 Dashboard response:", res);
+            
+            if (res && res.ok) {
+                const data = await res.json();
+                console.log("✅ Dashboard data received:", data);
 
             updateDashboardStats(data.credits || 0);
             updateVIPStatus(data.lifetime || 0);
