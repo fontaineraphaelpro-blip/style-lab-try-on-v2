@@ -20,7 +20,7 @@ router = APIRouter()
 # Configuration
 SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY")
 SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET")
-APPLICATION_URL = os.getenv("APPLICATION_URL", "https://style-lab-try-on-v2.up.railway.app")
+APPLICATION_URL = os.getenv("APPLICATION_URL", "https://style-lab-try-on-v2-production.up.railway.app")
 SCOPES = "write_products,read_products"
 
 
