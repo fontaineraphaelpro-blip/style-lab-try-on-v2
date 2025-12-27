@@ -477,12 +477,14 @@ async def serve_index(request: Request):
         
         # Extraire le shop depuis les query params pour l'injecter dans la page
         shop = request.query_params.get("shop")
+        print(f"📄 Servir index.html - Shop: {shop}")
         if shop:
             # Injecter le shop dans le HTML pour que le JS puisse l'utiliser
             html_content = html_content.replace(
                 "<body>",
                 f"<body data-shop=\"{shop}\">"
             )
+            print(f"✅ Shop injecté dans HTML: {shop}")
         
         return HTMLResponse(content=html_content)
     return JSONResponse({"error": "Frontend not found"}, status_code=404)

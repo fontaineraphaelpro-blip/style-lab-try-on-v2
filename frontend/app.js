@@ -84,23 +84,39 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // Initialiser App Bridge si disponible
     let shopifyApp = null;
-    if (window.shopify && window.shopify.config) {
+    console.log("🔍 Vérification App Bridge...");
+    console.log("   window.shopify:", window.shopify);
+    console.log("   window.shopify?.config:", window.shopify?.config);
+    
+    if (window.shopify) {
         try {
+            // App Bridge v3 - window.shopify est directement disponible
             shopifyApp = window.shopify;
-            console.log("✅ App Bridge initialisé");
+            console.log("✅ App Bridge détecté:", shopifyApp);
+            if (shopifyApp.id) {
+                console.log("✅ App Bridge ID disponible");
+            } else {
+                console.warn("⚠️  App Bridge ID non disponible");
+            }
         } catch (e) {
-            console.warn("⚠️  App Bridge non disponible:", e);
+            console.warn("⚠️  Erreur App Bridge:", e);
         }
+    } else {
+        console.warn("⚠️  App Bridge non disponible (window.shopify est undefined)");
     }
 
     async function getSessionToken() {
         try {
             if (shopifyApp && shopifyApp.id) {
+                console.log("🔑 Récupération du Session Token...");
                 const token = await shopifyApp.id.getToken();
+                console.log("✅ Session Token récupéré:", token ? "Oui" : "Non");
                 return token;
+            } else {
+                console.warn("⚠️  App Bridge ID non disponible pour récupérer le token");
             }
         } catch (e) {
-            console.warn("⚠️  Impossible de récupérer le Session Token:", e);
+            console.warn("⚠️  Erreur lors de la récupération du Session Token:", e);
         }
         return null;
     }
