@@ -157,20 +157,33 @@ async def oauth_callback(
     
     try:
         response = requests.post(token_url, json=token_data, timeout=10)
+        
+        if response.status_code != 200:
+            error_text = response.text
+            print(f"❌ OAuth token exchange failed: {response.status_code} - {error_text}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to exchange OAuth code: {error_text}"
+            )
+        
         response.raise_for_status()
         token_response = response.json()
         
         access_token = token_response.get('access_token')
         if not access_token:
+            print(f"❌ No access_token in response: {token_response}")
             raise HTTPException(
                 status_code=500,
                 detail="Failed to get access token from Shopify"
             )
         
+        print(f"✅ Access token obtenu pour {shop}")
+        
         # Sauvegarder ou mettre à jour le shop dans la DB
         db = next(get_db())
         shop_record = db.query(Shop).filter(Shop.domain == shop).first()
         
+        is_new_shop = False
         if shop_record:
             # Mise à jour
             shop_record.access_token = access_token
@@ -178,19 +191,28 @@ async def oauth_callback(
             shop_record.last_active_at = datetime.utcnow()
             if not shop_record.installed_at:
                 shop_record.installed_at = datetime.utcnow()
+                is_new_shop = True
         else:
-            # Nouveau shop
+            # Nouveau shop - donner des crédits gratuits
+            is_new_shop = True
+            FREE_CREDITS_ON_INSTALL = 10  # Crédits gratuits à l'installation
+            
             shop_record = Shop(
                 domain=shop,
                 access_token=access_token,
                 installed_at=datetime.utcnow(),
                 last_active_at=datetime.utcnow(),
-                is_active=True
+                is_active=True,
+                credits=FREE_CREDITS_ON_INSTALL,  # Crédits gratuits
+                lifetime_credits=FREE_CREDITS_ON_INSTALL
             )
             db.add(shop_record)
+            print(f"✅ Nouveau shop installé: {shop} - {FREE_CREDITS_ON_INSTALL} crédits gratuits ajoutés")
         
         db.commit()
         db.close()
+        
+        print(f"✅ Shop sauvegardé: {shop} - Crédits: {shop_record.credits}")
         
         # Rediriger vers l'app embedded
         # Pour une app embedded, Shopify redirige automatiquement vers application_url

@@ -429,6 +429,36 @@ async def health_check():
         }
     }
 
+@app.get("/api/debug/shops")
+async def debug_shops(request: Request):
+    """
+    Route de debug pour vérifier les shops dans la DB.
+    À SUPPRIMER en production.
+    """
+    from database import get_db, Shop
+    
+    db = next(get_db())
+    shops = db.query(Shop).all()
+    
+    shops_data = []
+    for shop in shops:
+        shops_data.append({
+            "domain": shop.domain,
+            "credits": shop.credits,
+            "lifetime_credits": shop.lifetime_credits,
+            "is_active": shop.is_active,
+            "installed_at": shop.installed_at.isoformat() if shop.installed_at else None,
+            "last_active_at": shop.last_active_at.isoformat() if shop.last_active_at else None,
+            "has_token": bool(shop.access_token)
+        })
+    
+    db.close()
+    
+    return {
+        "total_shops": len(shops_data),
+        "shops": shops_data
+    }
+
 
 # ==========================================
 # ERROR HANDLERS
