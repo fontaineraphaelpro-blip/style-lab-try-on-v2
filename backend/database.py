@@ -41,6 +41,11 @@ def _init_engine():
     if not DATABASE_URL:
         return None
     
+    # Vérifier à nouveau si l'URL est Render (double sécurité)
+    if "dpg-" in DATABASE_URL:
+        print(f"⚠️  WARNING: Render URL detected in _init_engine, ignoring")
+        return None
+    
     try:
         # Créer l'engine avec connect_args pour éviter les erreurs immédiates
         # Railway internal URLs fonctionnent si les services sont dans le même projet
