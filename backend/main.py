@@ -245,6 +245,8 @@ async def root(request: Request):
     host = query_params.get("host")
     
     print(f"📥 Root route called - shop: {shop}, host: {host}, all params: {query_params}")
+    print(f"   Headers: {dict(request.headers)}")
+    print(f"   URL: {request.url}")
     
     # Si shop est présent mais pas host, c'est peut-être une installation
     # Rediriger vers /auth pour démarrer OAuth
