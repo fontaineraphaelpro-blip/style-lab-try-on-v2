@@ -44,12 +44,16 @@ def _init_engine():
         return engine
     
     if not DATABASE_URL:
+        print("🔍 DEBUG: _init_engine - No DATABASE_URL, returning None")
         return None
     
     # Vérifier à nouveau si l'URL est Render (double sécurité)
     if "dpg-" in DATABASE_URL:
         print(f"⚠️  WARNING: Render URL detected in _init_engine, ignoring")
+        print(f"   URL: {DATABASE_URL[:100]}...")
         return None
+    
+    print(f"🔍 DEBUG: _init_engine - DATABASE_URL looks valid: {DATABASE_URL[:50]}...")
     
     try:
         # Créer l'engine avec connect_args pour éviter les erreurs immédiates
