@@ -146,21 +146,26 @@ document.addEventListener("DOMContentLoaded", function() {
                 const data = await res.json();
                 console.log("✅ Dashboard data received:", data);
 
-            updateDashboardStats(data.credits || 0);
-            updateVIPStatus(data.lifetime || 0);
+                updateDashboardStats(data.credits || 0);
+                updateVIPStatus(data.lifetime || 0);
 
-            const tryEl = document.getElementById('stat-tryons');
-            const atcEl = document.getElementById('stat-atc');
-            if(tryEl) tryEl.innerText = data.usage || 0;
-            if(atcEl) atcEl.innerText = data.atc || 0;
+                const tryEl = document.getElementById('stat-tryons');
+                const atcEl = document.getElementById('stat-atc');
+                if(tryEl) tryEl.innerText = data.usage || 0;
+                if(atcEl) atcEl.innerText = data.atc || 0;
 
-            if(data.widget) {
-                document.getElementById('ws-text').value = data.widget.text || "Try It On Now ✨";
-                document.getElementById('ws-color').value = data.widget.bg || "#000000";
-                document.getElementById('ws-text-color').value = data.widget.color || "#ffffff";
-                if(data.security) document.getElementById('ws-limit').value = data.security.max_tries || 5;
-                window.updateWidgetPreview();
+                if(data.widget) {
+                    document.getElementById('ws-text').value = data.widget.text || "Try It On Now ✨";
+                    document.getElementById('ws-color').value = data.widget.bg || "#000000";
+                    document.getElementById('ws-text-color').value = data.widget.color || "#ffffff";
+                    if(data.security) document.getElementById('ws-limit').value = data.security.max_tries || 5;
+                    window.updateWidgetPreview();
+                }
+            } else {
+                console.error("❌ Dashboard request failed:", res ? res.status : "no response", res ? res.statusText : "no response");
             }
+        } catch (error) {
+            console.error("❌ Error in initAdminMode:", error);
         }
     }
 
