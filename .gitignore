@@ -1,0 +1,35 @@
+# --- SYSTÈME & IDE ---
+.DS_Store
+.vscode/
+.idea/
+
+# --- SÉCURITÉ (CRUCIAL) ---
+.env
+.env.local
+
+# --- PYTHON ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+/venv
+/env
+/bin
+/lib
+/include
+
+# --- BASE DE DONNÉES (POUR ÉVITER LES CONFLITS) ---
+*.db
+*.sqlite3
+local_shops.db
+
+# --- LOGS & DEBUG ---
+*.log
+celerybeat-schedule
+
+# --- FICHIERS GÉNÉRÉS PAR L'APP (IMAGES) ---
+# On ne veut pas envoyer les photos des clients sur GitHub
+/uploads/
+/results/
+/static/uploads/
+/static/results/
