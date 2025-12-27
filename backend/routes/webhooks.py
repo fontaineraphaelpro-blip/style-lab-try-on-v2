@@ -190,3 +190,53 @@ async def test_webhook(request: Request):
     data = await request.json()
     print(f"🧪 Test Webhook received: {data}")
     return JSONResponse({"success": True, "echo": data})
+
+
+# ==========================================
+# BILLING WEBHOOKS
+# ==========================================
+
+@router.post("/billing/charges/activate")
+async def billing_charge_activate(
+    request: Request,
+    x_shopify_hmac_sha256: str = Header(None)
+):
+    """
+    Webhook appelé quand une charge d'application est activée (acceptée).
+    Active automatiquement les crédits.
+    """
+    body = await request.body()
+    
+    if not verify_webhook_hmac(body, x_shopify_hmac_sha256):
+        raise HTTPException(status_code=401, detail="Invalid HMAC")
+    
+    data = await request.json()
+    charge_id = str(data.get("id"))
+    shop_domain = data.get("shop_domain")
+    
+    print(f"💳 Billing Charge Activated: {shop_domain} - Charge: {charge_id}")
+    
+    db = next(get_db())
+    
+    # Trouver l'achat correspondant
+    purchase = db.query(CreditPurchase).filter(
+        CreditPurchase.charge_id == charge_id,
+        CreditPurchase.shop == shop_domain
+    ).first()
+    
+    if purchase and purchase.status != "completed":
+        # Activer les crédits
+        shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+        if shop:
+            shop.credits += purchase.credits_purchased
+            shop.lifetime_credits += purchase.credits_purchased
+            purchase.status = "completed"
+            purchase.activated_at = datetime.utcnow()
+            db.commit()
+            print(f"✅ Credits activated: {purchase.credits_purchased} credits for {shop_domain}")
+        else:
+            print(f"⚠️  Shop not found: {shop_domain}")
+    else:
+        print(f"⚠️  Purchase not found or already completed: {charge_id}")
+    
+    return JSONResponse({"success": True})

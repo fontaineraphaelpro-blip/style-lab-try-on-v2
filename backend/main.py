@@ -12,6 +12,7 @@ Architecture:
 
 import os
 from pathlib import Path
+from typing import Optional
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -235,6 +236,26 @@ async def api_track_atc(
 ):
     """Route compatible frontend - track add to cart"""
     return await track_add_to_cart(shop=shop, db=db)
+
+@app.get("/api/billing/confirm")
+async def api_billing_confirm(
+    request: Request,
+    purchase_id: Optional[int] = None,
+    charge_id: Optional[str] = None
+):
+    """Route compatible frontend - confirmation d'achat"""
+    from routes.admin import billing_confirm
+    from fastapi import Query
+    
+    # Récupérer les paramètres depuis la query string si non fournis
+    if not purchase_id:
+        purchase_id_param = request.query_params.get("purchase_id")
+        purchase_id = int(purchase_id_param) if purchase_id_param and purchase_id_param.isdigit() else None
+    
+    if not charge_id:
+        charge_id = request.query_params.get("charge_id")
+    
+    return await billing_confirm(purchase_id=purchase_id, charge_id=charge_id, request=request)
 
 @app.post("/api/generate")
 async def api_generate(request: Request):

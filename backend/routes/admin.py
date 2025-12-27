@@ -5,6 +5,8 @@ Routes pour le dashboard admin avec analytics avancées.
 """
 
 import hashlib
+import os
+import requests
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -16,6 +18,9 @@ from pydantic import BaseModel
 from database import get_db, Shop, TryOnLog, RateLimit, CreditPurchase
 
 router = APIRouter()
+
+# Configuration Shopify
+SHOPIFY_API_VERSION = "2025-01"
 
 
 # ==========================================
@@ -418,9 +423,7 @@ async def initiate_credit_purchase(
         credits = pack["credits"]
         price = pack["price"]
     
-    # TODO: Implémenter Shopify Billing API
-    # Pour l'instant, retourner une URL de test
-    
+    # Créer l'enregistrement d'achat
     purchase = CreditPurchase(
         shop=shop.domain,
         credits_purchased=credits,
@@ -430,17 +433,55 @@ async def initiate_credit_purchase(
     db.add(purchase)
     db.commit()
     
-    # Utiliser l'URL de l'app depuis les variables d'environnement ou construire dynamiquement
-    import os
-    app_url = os.getenv("APP_URL", "https://style-lab-try-on-v2-production.up.railway.app")
-    
-    return {
-        "success": True,
-        "purchase_id": purchase.id,
-        "credits": credits,
-        "price_usd": price,
-        "confirmation_url": f"{app_url}/billing/confirm?id={purchase.id}"
-    }
+    # Créer une charge Shopify (One-time application charge)
+    try:
+        shopify_url = f"https://{shop.domain}/admin/api/{SHOPIFY_API_VERSION}/application_charges.json"
+        
+        charge_data = {
+            "application_charge": {
+                "name": f"VTON Credits - {credits} credits",
+                "price": price,
+                "return_url": f"{os.getenv('APP_URL', 'https://style-lab-try-on-v2-production.up.railway.app')}/api/billing/confirm?purchase_id={purchase.id}"
+            }
+        }
+        
+        headers = {
+            "X-Shopify-Access-Token": shop.access_token,
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(shopify_url, json=charge_data, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        charge_result = response.json()
+        charge = charge_result.get("application_charge", {})
+        charge_id = charge.get("id")
+        confirmation_url = charge.get("confirmation_url")
+        
+        # Mettre à jour l'achat avec le charge_id
+        purchase.charge_id = str(charge_id)
+        db.commit()
+        
+        return {
+            "success": True,
+            "purchase_id": purchase.id,
+            "credits": credits,
+            "price_usd": price,
+            "confirmation_url": confirmation_url
+        }
+        
+    except requests.RequestException as e:
+        print(f"❌ Shopify Billing API error: {e}")
+        # En cas d'erreur, retourner quand même une réponse pour permettre le test
+        app_url = os.getenv("APP_URL", "https://style-lab-try-on-v2-production.up.railway.app")
+        return {
+            "success": True,
+            "purchase_id": purchase.id,
+            "credits": credits,
+            "price_usd": price,
+            "confirmation_url": f"{app_url}/api/billing/confirm?purchase_id={purchase.id}",
+            "warning": "Shopify billing API unavailable, using fallback"
+        }
 
 
 @router.post("/track-atc")
@@ -455,6 +496,122 @@ async def track_add_to_cart(
     db.commit()
     
     return {"success": True, "total_atc": shop.total_atc}
+
+
+# ==========================================
+# BILLING CONFIRMATION
+# ==========================================
+
+@router.get("/billing/confirm")
+async def billing_confirm(
+    purchase_id: Optional[int] = None,
+    charge_id: Optional[str] = None,
+    request: Request = None
+):
+    """
+    Route de confirmation après paiement Shopify.
+    Appelée après que le merchant ait accepté la charge.
+    """
+    from fastapi.responses import RedirectResponse, HTMLResponse
+    
+    db = next(get_db())
+    
+    # Trouver l'achat
+    purchase = None
+    if purchase_id:
+        purchase = db.query(CreditPurchase).filter(CreditPurchase.id == purchase_id).first()
+    elif charge_id:
+        purchase = db.query(CreditPurchase).filter(CreditPurchase.charge_id == charge_id).first()
+    
+    if not purchase:
+        return HTMLResponse(
+            content="<h1>Purchase not found</h1><p>The purchase could not be found.</p>",
+            status_code=404
+        )
+    
+    # Vérifier le statut de la charge Shopify
+    shop = db.query(Shop).filter(Shop.domain == purchase.shop).first()
+    if not shop:
+        return HTMLResponse(
+            content="<h1>Shop not found</h1>",
+            status_code=404
+        )
+    
+    # Si on a un charge_id, vérifier le statut auprès de Shopify
+    if purchase.charge_id:
+        try:
+            shopify_url = f"https://{shop.domain}/admin/api/{SHOPIFY_API_VERSION}/application_charges/{purchase.charge_id}.json"
+            headers = {
+                "X-Shopify-Access-Token": shop.access_token,
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(shopify_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            charge_data = response.json().get("application_charge", {})
+            charge_status = charge_data.get("status")
+            
+            if charge_status == "accepted":
+                # Activer les crédits
+                if purchase.status != "completed":
+                    shop.credits += purchase.credits_purchased
+                    shop.lifetime_credits += purchase.credits_purchased
+                    purchase.status = "completed"
+                    purchase.activated_at = datetime.utcnow()
+                    db.commit()
+                    
+                    return HTMLResponse(
+                        content=f"""
+                        <html>
+                        <head><title>Payment Confirmed</title></head>
+                        <body style="font-family: Arial; text-align: center; padding: 50px;">
+                            <h1 style="color: green;">✅ Payment Confirmed!</h1>
+                            <p>You have successfully purchased <strong>{purchase.credits_purchased} credits</strong>.</p>
+                            <p>Your credits have been added to your account.</p>
+                            <p><a href="/">Return to Dashboard</a></p>
+                        </body>
+                        </html>
+                        """
+                    )
+            elif charge_status == "declined":
+                purchase.status = "failed"
+                db.commit()
+                return HTMLResponse(
+                    content="<h1>Payment Declined</h1><p>The payment was declined.</p>",
+                    status_code=400
+                )
+            else:
+                # En attente
+                return HTMLResponse(
+                    content=f"""
+                    <html>
+                    <head><title>Payment Pending</title></head>
+                    <body style="font-family: Arial; text-align: center; padding: 50px;">
+                        <h1>⏳ Payment Pending</h1>
+                        <p>Your payment is being processed. Credits will be added automatically once confirmed.</p>
+                        <p><a href="/">Return to Dashboard</a></p>
+                    </body>
+                    </html>
+                    """
+                )
+        except requests.RequestException as e:
+            print(f"❌ Error checking charge status: {e}")
+    
+    # Fallback: si pas de charge_id ou erreur, afficher un message
+    return HTMLResponse(
+        content=f"""
+        <html>
+        <head><title>Payment Processing</title></head>
+        <body style="font-family: Arial; text-align: center; padding: 50px;">
+            <h1>⏳ Payment Processing</h1>
+            <p>Your payment of <strong>{purchase.credits_purchased} credits</strong> is being processed.</p>
+            <p>Credits will be added to your account once confirmed.</p>
+            <p><a href="/">Return to Dashboard</a></p>
+        </body>
+        </html>
+        """
+    )
 
 
 # ==========================================
