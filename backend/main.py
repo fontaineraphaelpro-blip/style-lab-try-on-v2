@@ -93,14 +93,23 @@ app = FastAPI(
 # ==========================================
 
 # CORS (minimal - App Proxy handled by Shopify)
+# Autoriser aussi les requêtes depuis Railway et localhost
+allowed_origins = [
+    "https://*.myshopify.com",
+    "http://localhost:*",
+    "https://*.up.railway.app",
+    "https://*.railway.app"
+] if ENVIRONMENT == "development" else [
+    "https://*.myshopify.com",
+    "https://*.up.railway.app",
+    "https://*.railway.app"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://*.myshopify.com",
-        "http://localhost:*"  # Dev only
-    ] if ENVIRONMENT == "development" else ["https://*.myshopify.com"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -146,6 +155,181 @@ app.include_router(
     prefix="/api/admin",
     tags=["Admin"]
 )
+
+# Routes compatibles frontend (legacy)
+from fastapi import Depends
+from routes.admin import get_authenticated_shop, get_dashboard, save_settings, initiate_credit_purchase, track_add_to_cart
+from database import get_db, Shop
+from sqlalchemy.orm import Session
+
+@app.get("/api/get-data")
+async def api_get_data(
+    shop: Shop = Depends(get_authenticated_shop),
+    db: Session = Depends(get_db)
+):
+    """Route compatible frontend - retourne les données du dashboard dans le format attendu"""
+    dashboard_data = await get_dashboard(shop=shop, db=db)
+    
+    return {
+        "credits": dashboard_data["billing"]["credits"],
+        "lifetime": dashboard_data["billing"]["lifetime_credits"],
+        "usage": dashboard_data["usage"]["total_tryons"],
+        "atc": dashboard_data["usage"]["total_atc"],
+        "widget": dashboard_data["widget"],
+        "security": {
+            "max_tries": dashboard_data["settings"]["max_tries_per_user"]
+        }
+    }
+
+@app.post("/api/save-settings")
+async def api_save_settings(
+    request: Request,
+    shop: Shop = Depends(get_authenticated_shop),
+    db: Session = Depends(get_db)
+):
+    """Route compatible frontend - sauvegarde les paramètres"""
+    from pydantic import BaseModel
+    from typing import Optional
+    
+    class SettingsRequest(BaseModel):
+        shop: str
+        text: str
+        bg: str
+        color: str
+        max_tries: int
+    
+    body = await request.json()
+    settings_req = SettingsRequest(**body)
+    
+    from routes.admin import SettingsRequest as AdminSettingsRequest
+    admin_settings = AdminSettingsRequest(
+        text=settings_req.text,
+        bg=settings_req.bg,
+        color=settings_req.color,
+        max_tries=settings_req.max_tries
+    )
+    
+    return await save_settings(request=admin_settings, shop=shop, db=db)
+
+@app.post("/api/buy-credits")
+async def api_buy_credits(
+    request: Request,
+    shop: Shop = Depends(get_authenticated_shop),
+    db: Session = Depends(get_db)
+):
+    """Route compatible frontend - initie l'achat de crédits"""
+    from routes.admin import BillingRequest
+    
+    body = await request.json()
+    billing_req = BillingRequest(
+        pack_id=body.get("pack_id"),
+        custom_amount=body.get("custom_amount")
+    )
+    
+    return await initiate_credit_purchase(request=billing_req, shop=shop, db=db)
+
+@app.post("/api/track-atc")
+async def api_track_atc(
+    shop: Shop = Depends(get_authenticated_shop),
+    db: Session = Depends(get_db)
+):
+    """Route compatible frontend - track add to cart"""
+    return await track_add_to_cart(shop=shop, db=db)
+
+@app.post("/api/generate")
+async def api_generate(request: Request):
+    """Route compatible frontend - génère un try-on (admin mode)"""
+    import io
+    import base64
+    import time
+    from routes.proxy import GenerateRequest
+    from services.replicate_service import ReplicateService
+    from database import get_db, Shop, TryOnLog, RateLimit
+    from datetime import datetime
+    from fastapi import HTTPException
+    
+    try:
+        body = await request.json()
+        shop_domain = body.get("shop")
+        
+        if not shop_domain:
+            raise HTTPException(status_code=400, detail="Shop parameter missing")
+        
+        # Normaliser le shop
+        if not shop_domain.endswith('.myshopify.com'):
+            shop_domain = f"{shop_domain}.myshopify.com"
+        
+        # Récupérer le shop
+        db = next(get_db())
+        shop_record = db.query(Shop).filter(Shop.domain == shop_domain).first()
+        
+        if not shop_record:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        
+        # Vérifier les crédits
+        if shop_record.credits < 1:
+            return JSONResponse(
+                {"error": "Insufficient credits", "credits": 0},
+                status_code=402
+            )
+        
+        # Préparer les images
+        if not body.get("person_image_base64"):
+            raise HTTPException(status_code=400, detail="Person image required")
+        
+        person_bytes = base64.b64decode(body.get("person_image_base64"))
+        person_file = io.BytesIO(person_bytes)
+        
+        garment_input = None
+        if body.get("clothing_file_base64"):
+            garment_bytes = base64.b64decode(body.get("clothing_file_base64"))
+            garment_input = io.BytesIO(garment_bytes)
+        elif body.get("clothing_url"):
+            garment_input = body.get("clothing_url")
+            if garment_input.startswith("//"):
+                garment_input = "https:" + garment_input
+        else:
+            raise HTTPException(status_code=400, detail="No garment provided")
+        
+        start_time = time.time()
+        
+        # Générer le try-on
+        result_url = ReplicateService.generate_tryon(
+            person_image=person_file,
+            garment_image=garment_input,
+            category=body.get("category", "upper_body")
+        )
+        
+        # Mettre à jour les stats
+        shop_record.credits -= 1
+        shop_record.total_tryons += 1
+        
+        latency_ms = int((time.time() - start_time) * 1000)
+        
+        client_ip = request.client.host
+        log = TryOnLog(
+            shop=shop_domain,
+            customer_ip=client_ip,
+            product_id=body.get("product_id"),
+            success=True,
+            latency_ms=latency_ms,
+            result_image_url=result_url
+        )
+        db.add(log)
+        db.commit()
+        db.close()
+        
+        return {
+            "success": True,
+            "result_image_url": result_url,
+            "credits_remaining": shop_record.credits
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Generate error: {e}")
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
 
 # Webhooks
 app.include_router(
