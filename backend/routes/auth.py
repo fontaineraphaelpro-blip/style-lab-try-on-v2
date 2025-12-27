@@ -112,28 +112,33 @@ async def auth_callback(
             raise HTTPException(status_code=400, detail="No access token received")
         
         # Sauvegarder ou mettre à jour le shop en DB
-        db = next(get_db())
-        shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-        
-        if shop_record:
-            # Mise à jour
-            shop_record.access_token = access_token
-            shop_record.is_active = True
-            shop_record.last_active_at = datetime.utcnow()
-            if not shop_record.installed_at:
-                shop_record.installed_at = datetime.utcnow()
-        else:
-            # Création
-            shop_record = Shop(
-                domain=shop,
-                access_token=access_token,
-                is_active=True,
-                installed_at=datetime.utcnow(),
-                last_active_at=datetime.utcnow()
-            )
-            db.add(shop_record)
-        
-        db.commit()
+        try:
+            db = next(get_db())
+            shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+            
+            if shop_record:
+                # Mise à jour
+                shop_record.access_token = access_token
+                shop_record.is_active = True
+                shop_record.last_active_at = datetime.utcnow()
+                if not shop_record.installed_at:
+                    shop_record.installed_at = datetime.utcnow()
+            else:
+                # Création
+                shop_record = Shop(
+                    domain=shop,
+                    access_token=access_token,
+                    is_active=True,
+                    installed_at=datetime.utcnow(),
+                    last_active_at=datetime.utcnow()
+                )
+                db.add(shop_record)
+            
+            db.commit()
+        except Exception as db_error:
+            # Log l'erreur mais continue quand même (l'app peut fonctionner sans DB)
+            print(f"⚠️ Database error during OAuth callback: {db_error}")
+            # Ne pas bloquer l'installation si la DB n'est pas disponible
         
         # Rediriger vers l'app embarquée
         # Pour les apps embarquées, utiliser le paramètre host de Shopify
@@ -143,25 +148,71 @@ async def auth_callback(
         else:
             # Fallback si host n'est pas fourni
             shop_name = shop.replace('.myshopify.com', '')
-            app_url = f"{APPLICATION_URL}/app?shop={shop}&host={shop_name}"
+            app_url = f"{APPLICATION_URL}/app?shop={shop}"
         
-        # Redirection pour apps embarquées Shopify
+        # Redirection pour apps embarquées Shopify avec App Bridge
         return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
         <head>
             <title>Installation réussie</title>
             <meta charset="UTF-8">
+            <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
             <script>
-                // Pour les apps embarquées Shopify, utiliser window.top.location
-                // Le paramètre host permet à App Bridge de s'initialiser correctement
-                if (window.top !== window.self) {{
-                    // Dans une iframe (app embarquée)
-                    window.top.location.href = "{app_url}";
-                }} else {{
-                    // Pas dans une iframe (fallback)
-                    window.location.href = "{app_url}";
+                // Attendre que App Bridge soit chargé
+                function redirectToApp() {{
+                    const appUrl = "{app_url}";
+                    console.log("🔄 Redirecting to:", appUrl);
+                    
+                    // Pour les apps embarquées, utiliser App Bridge Redirect si disponible
+                    if (window.AppBridge && window.AppBridge.default) {{
+                        try {{
+                            const app = window.AppBridge.default({{
+                                apiKey: "{SHOPIFY_API_KEY or ""}",
+                                host: "{host or ""}",
+                                shop: "{shop}"
+                            }});
+                            
+                            // Utiliser App Bridge Redirect pour une redirection propre
+                            if (app && app.getState) {{
+                                window.location.href = appUrl;
+                            }} else {{
+                                // Fallback: redirection standard
+                                if (window.top !== window.self) {{
+                                    window.top.location.href = appUrl;
+                                }} else {{
+                                    window.location.href = appUrl;
+                                }}
+                            }}
+                        }} catch (error) {{
+                            console.error("App Bridge error:", error);
+                            // Fallback: redirection standard
+                            window.location.href = appUrl;
+                        }}
+                    }} else {{
+                        // Fallback: redirection standard si App Bridge n'est pas disponible
+                        if (window.top !== window.self) {{
+                            window.top.location.href = appUrl;
+                        }} else {{
+                            window.location.href = appUrl;
+                        }}
+                    }}
                 }}
+                
+                // Essayer immédiatement
+                if (document.readyState === 'loading') {{
+                    document.addEventListener('DOMContentLoaded', redirectToApp);
+                }} else {{
+                    redirectToApp();
+                }}
+                
+                // Timeout de sécurité
+                setTimeout(function() {{
+                    if (window.location.href.indexOf('/app') === -1) {{
+                        console.log("⏰ Timeout, forcing redirect");
+                        window.location.href = "{app_url}";
+                    }}
+                }}, 2000);
             </script>
         </head>
         <body style="font-family: system-ui; text-align: center; padding: 50px; background: #f5f5f5;">
@@ -175,7 +226,13 @@ async def auth_callback(
         """)
         
     except requests.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Failed to exchange token: {str(e)}")
+        error_msg = f"Failed to exchange token: {str(e)}"
+        print(f"❌ OAuth callback error: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        print(f"❌ OAuth callback unexpected error: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @router.get("/auth/shopify/callback")
