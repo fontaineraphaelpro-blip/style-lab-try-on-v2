@@ -180,47 +180,67 @@ async def oauth_callback(
         print(f"✅ Access token obtenu pour {shop}")
         
         # Sauvegarder ou mettre à jour le shop dans la DB
-        db = next(get_db())
-        shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-        
-        is_new_shop = False
-        if shop_record:
-            # Mise à jour
-            shop_record.access_token = access_token
-            shop_record.is_active = True
-            shop_record.last_active_at = datetime.utcnow()
-            if not shop_record.installed_at:
-                shop_record.installed_at = datetime.utcnow()
-                is_new_shop = True
-        else:
-            # Nouveau shop - donner des crédits gratuits
-            is_new_shop = True
-            FREE_CREDITS_ON_INSTALL = 10  # Crédits gratuits à l'installation
-            
-            shop_record = Shop(
-                domain=shop,
-                access_token=access_token,
-                installed_at=datetime.utcnow(),
-                last_active_at=datetime.utcnow(),
-                is_active=True,
-                credits=FREE_CREDITS_ON_INSTALL,  # Crédits gratuits
-                lifetime_credits=FREE_CREDITS_ON_INSTALL
-            )
-            db.add(shop_record)
-            print(f"✅ Nouveau shop installé: {shop} - {FREE_CREDITS_ON_INSTALL} crédits gratuits ajoutés")
-        
+        print(f"🔧 Connexion à la base de données...")
+        db = None
         try:
+            # Utiliser SessionLocal directement pour plus de contrôle
+            from database import SessionLocal
+            db = SessionLocal()
+            print(f"✅ Session DB créée")
+            
+            shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+            
+            is_new_shop = False
+            if shop_record:
+                # Mise à jour
+                print(f"🔄 Shop existant trouvé, mise à jour...")
+                shop_record.access_token = access_token
+                shop_record.is_active = True
+                shop_record.last_active_at = datetime.utcnow()
+                if not shop_record.installed_at:
+                    shop_record.installed_at = datetime.utcnow()
+                    is_new_shop = True
+            else:
+                # Nouveau shop - donner des crédits gratuits
+                print(f"🆕 Nouveau shop, création...")
+                is_new_shop = True
+                FREE_CREDITS_ON_INSTALL = 10  # Crédits gratuits à l'installation
+                
+                shop_record = Shop(
+                    domain=shop,
+                    access_token=access_token,
+                    installed_at=datetime.utcnow(),
+                    last_active_at=datetime.utcnow(),
+                    is_active=True,
+                    credits=FREE_CREDITS_ON_INSTALL,  # Crédits gratuits
+                    lifetime_credits=FREE_CREDITS_ON_INSTALL
+                )
+                db.add(shop_record)
+                print(f"✅ Nouveau shop créé: {shop} - {FREE_CREDITS_ON_INSTALL} crédits gratuits ajoutés")
+            
+            # Commit les changements
+            print(f"💾 Commit en cours...")
             db.commit()
             print(f"✅ Shop sauvegardé en DB: {shop} - Crédits: {shop_record.credits}")
+            
+            # Vérifier que c'est bien sauvegardé
+            db.refresh(shop_record)
+            print(f"✅ Vérification: Shop en DB - Domain: {shop_record.domain}, Credits: {shop_record.credits}, Active: {shop_record.is_active}")
+            
         except Exception as db_error:
-            print(f"❌ Erreur lors du commit DB: {db_error}")
-            db.rollback()
+            print(f"❌ Erreur lors de la sauvegarde en DB: {db_error}")
+            import traceback
+            traceback.print_exc()
+            if db:
+                db.rollback()
             raise HTTPException(
                 status_code=500,
                 detail=f"Database error: {str(db_error)}"
             )
         finally:
-            db.close()
+            if db:
+                db.close()
+                print(f"🔒 Session DB fermée")
         
         # Rediriger vers l'app embedded
         # Pour une app embedded, Shopify redirige automatiquement vers application_url

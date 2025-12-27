@@ -57,8 +57,20 @@ async def lifespan(app: FastAPI):
     print(f"   Database: {DATABASE_URL[:30]}...")
     
     # Initialiser la DB
-    init_db()
-    print("✅ Database initialized")
+    try:
+        init_db()
+        print("✅ Database initialized")
+        
+        # Tester la connexion
+        from database import test_connection
+        if test_connection():
+            print("✅ Database connection test passed")
+        else:
+            print("⚠️  Database connection test failed")
+    except Exception as e:
+        print(f"❌ Database initialization error: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Vérifier les credentials Shopify
     if not SHOPIFY_API_KEY or not SHOPIFY_API_SECRET:

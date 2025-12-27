@@ -170,12 +170,15 @@ def test_connection():
     """
     try:
         db = SessionLocal()
-        db.execute("SELECT 1")
+        # Tester avec une requête simple
+        result = db.execute("SELECT 1").scalar()
         db.close()
-        print("✅ Database connection successful")
+        print(f"✅ Database connection successful (result: {result})")
         return True
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
