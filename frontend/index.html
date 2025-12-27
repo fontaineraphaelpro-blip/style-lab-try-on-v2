@@ -15,6 +15,9 @@
             
             console.log("🔍 App Bridge init - shop:", shop, "host:", host, "apiKey:", apiKey ? "present" : "missing");
             
+            let retryCount = 0;
+            const maxRetries = 50; // 5 secondes max (50 * 100ms)
+            
             function initAppBridge() {
                 if (window.AppBridge && shop && host && apiKey) {
                     try {
@@ -24,13 +27,33 @@
                             shop: shop
                         });
                         console.log("✅ App Bridge initialized successfully");
+                        // Masquer le fallback une fois App Bridge initialisé
+                        const fallback = document.getElementById('loading-fallback');
+                        if (fallback) {
+                            fallback.style.display = 'none';
+                        }
+                        // Afficher le contenu
+                        document.body.style.opacity = "1";
                     } catch (error) {
                         console.error("❌ App Bridge initialization error:", error);
+                        // Afficher quand même le contenu en cas d'erreur
+                        document.body.style.opacity = "1";
                     }
                 } else {
-                    console.warn("⚠️ App Bridge not ready - AppBridge:", !!window.AppBridge, "shop:", shop, "host:", host, "apiKey:", !!apiKey);
-                    // Réessayer après un court délai
-                    setTimeout(initAppBridge, 100);
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        console.warn(`⚠️ App Bridge not ready (attempt ${retryCount}/${maxRetries}) - AppBridge:`, !!window.AppBridge, "shop:", shop, "host:", host, "apiKey:", !!apiKey);
+                        // Réessayer après un court délai
+                        setTimeout(initAppBridge, 100);
+                    } else {
+                        console.error("❌ App Bridge initialization timeout - showing content anyway");
+                        // Afficher le contenu même si App Bridge n'est pas initialisé
+                        document.body.style.opacity = "1";
+                        const fallback = document.getElementById('loading-fallback');
+                        if (fallback) {
+                            fallback.style.display = 'none';
+                        }
+                    }
                 }
             }
             
@@ -51,9 +74,14 @@
             margin: 0;
             padding: 0;
             font-family: system-ui, -apple-system, sans-serif;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        body.loaded {
+            opacity: 1;
         }
         .loading-fallback {
-            display: none;
+            display: flex;
             position: fixed;
             top: 0;
             left: 0;
@@ -64,8 +92,8 @@
             justify-content: center;
             z-index: 9999;
         }
-        .loading-fallback.show {
-            display: flex;
+        .app-container {
+            min-height: 100vh;
         }
     </style>
 </head>
@@ -77,14 +105,17 @@
         </div>
     </div>
     <script>
-        // Masquer le fallback une fois que le DOM est chargé
+        // Afficher le contenu après un délai de sécurité
         document.addEventListener('DOMContentLoaded', function() {
+            // Si après 3 secondes App Bridge n'est pas initialisé, afficher quand même
             setTimeout(function() {
                 const fallback = document.getElementById('loading-fallback');
-                if (fallback) {
-                    fallback.classList.remove('show');
+                if (fallback && fallback.style.display !== 'none') {
+                    console.log("⏰ Timeout reached, showing content anyway");
+                    fallback.style.display = 'none';
+                    document.body.style.opacity = "1";
                 }
-            }, 1000);
+            }, 3000);
         });
     </script>
 
