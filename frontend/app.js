@@ -259,8 +259,8 @@ document.addEventListener("DOMContentLoaded", function() {
             testUrl = `https://${shop}/apps/tryon/test`;
             console.log("   Mode: PROXY via Shopify");
         } else {
-            // En mode admin, direct
-            testUrl = 'https://stylelab-vtonn.onrender.com/api/test-cors';
+            // En mode admin, utiliser l'URL actuelle
+            testUrl = `${window.location.origin}/api/test-cors`;
             console.log("   Mode: DIRECT");
         }
         
@@ -392,8 +392,8 @@ document.addEventListener("DOMContentLoaded", function() {
                 apiUrl = `https://${shop}/apps/tryon/generate`;
                 console.log("🔄 Mode iframe - Utilisation du Proxy Shopify");
             } else {
-                // Sinon, URL directe (admin mode)
-                apiUrl = 'https://stylelab-vtonn.onrender.com/api/generate';
+                // Sinon, URL directe (admin mode) - utiliser l'URL actuelle
+                apiUrl = `${window.location.origin}/api/generate`;
                 console.log("🏠 Mode admin - URL directe");
             }
             
