@@ -85,10 +85,15 @@ async def auth_callback(
     Callback OAuth après autorisation par le merchant.
     Échange le code contre un access token.
     """
+    print(f"🔐 OAuth callback received - shop: {shop}, host: {host}")
+    
     # Vérifier HMAC
     query_params = dict(request.query_params)
     if not verify_hmac(query_params):
+        print(f"❌ HMAC verification failed")
         raise HTTPException(status_code=401, detail="Invalid HMAC signature")
+    
+    print(f"✅ HMAC verified successfully")
     
     if not shop.endswith(".myshopify.com"):
         shop = f"{shop}.myshopify.com"
@@ -149,6 +154,8 @@ async def auth_callback(
             # Fallback si host n'est pas fourni
             shop_name = shop.replace('.myshopify.com', '')
             app_url = f"{APPLICATION_URL}/app?shop={shop}"
+        
+        print(f"✅ OAuth successful, redirecting to: {app_url}")
         
         # Redirection pour apps embarquées Shopify avec App Bridge
         return HTMLResponse(content=f"""
