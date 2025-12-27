@@ -430,12 +430,16 @@ async def initiate_credit_purchase(
     db.add(purchase)
     db.commit()
     
+    # Utiliser l'URL de l'app depuis les variables d'environnement ou construire dynamiquement
+    import os
+    app_url = os.getenv("APP_URL", "https://style-lab-try-on-v2-production.up.railway.app")
+    
     return {
         "success": True,
         "purchase_id": purchase.id,
         "credits": credits,
         "price_usd": price,
-        "confirmation_url": f"https://stylelab-vtonn.onrender.com/billing/confirm?id={purchase.id}"
+        "confirmation_url": f"{app_url}/billing/confirm?id={purchase.id}"
     }
 
 
