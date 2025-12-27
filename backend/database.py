@@ -50,10 +50,9 @@ def _init_engine():
                 "sslmode": "prefer"  # SSL optionnel pour Railway
             }
         )
-        # Tester la connexion immédiatement
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        print("✅ Database engine created and connection tested")
+        # Ne pas tester la connexion immédiatement - laisser init_db() le faire
+        # Cela évite de faire crash l'app si la DB n'est pas accessible
+        print("✅ Database engine created (connection will be tested in init_db)")
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         return engine
     except Exception as e:
