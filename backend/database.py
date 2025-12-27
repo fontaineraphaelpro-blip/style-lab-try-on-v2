@@ -5,7 +5,7 @@ SQLAlchemy setup pour PostgreSQL sur Render.
 """
 
 import os
-from sqlalchemy import create_engine, Column, String, Integer, Boolean, DateTime, Text, DECIMAL
+from sqlalchemy import create_engine, Column, String, Integer, Boolean, DateTime, Text, DECIMAL, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -52,7 +52,7 @@ def _init_engine():
         )
         # Tester la connexion immédiatement
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(text("SELECT 1"))
         print("✅ Database engine created and connection tested")
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         return engine
