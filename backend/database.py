@@ -181,12 +181,21 @@ def init_db():
     
     try:
         print("🔧 Initializing database...")
+        # Tester la connexion d'abord avant de créer les tables
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        print("✅ Database connection successful")
+        # Créer les tables
         Base.metadata.create_all(bind=engine)
         print("✅ Database tables created successfully")
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
         # Ne pas faire crash l'app si la DB n'est pas accessible
         print("⚠️  Continuing without database...")
+        # Réinitialiser engine pour éviter les tentatives futures
+        global engine, SessionLocal
+        engine = None
+        SessionLocal = None
         # Ne PAS propager l'exception - l'app doit démarrer quand même
         return
 
