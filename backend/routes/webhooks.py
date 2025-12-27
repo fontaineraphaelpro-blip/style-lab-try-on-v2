@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from database import get_db, Shop, TryOnLog, RateLimit, CreditPurchase
+from database import Shop, TryOnLog, RateLimit, CreditPurchase
 
 router = APIRouter()
 
@@ -58,7 +58,7 @@ async def customer_data_request(
     shop_domain = data.get("shop_domain")
     customer = data.get("customer")
     
-    print(f"📋 GDPR Data Request: {shop_domain} - Customer: {customer.get('id')}")
+    print(f"📋 GDPR Data Request: {shop_domain} - Customer: {customer.get('id') if customer else 'N/A'}")
     
     # Récupérer les données du customer
     from database import SessionLocal
@@ -94,7 +94,7 @@ async def customer_redact(
     shop_domain = data.get("shop_domain")
     customer = data.get("customer")
     
-    print(f"🗑️  GDPR Customer Redact: {shop_domain} - Customer: {customer.get('id')}")
+    print(f"🗑️  GDPR Customer Redact: {shop_domain} - Customer: {customer.get('id') if customer else 'N/A'}")
     
     from database import SessionLocal
     db = SessionLocal()
@@ -104,10 +104,11 @@ async def customer_redact(
         # Note: On ne stocke que des IPs, pas d'ID customer
         # Donc peu de données à supprimer
         
-        db.query(TryOnLog).filter(
-            TryOnLog.shop == shop_domain,
-            TryOnLog.customer_id == str(customer.get('id'))
-        ).delete()
+        if customer and customer.get('id'):
+            db.query(TryOnLog).filter(
+                TryOnLog.shop == shop_domain,
+                TryOnLog.customer_id == str(customer.get('id'))
+            ).delete()
         
         db.commit()
         
@@ -206,19 +207,29 @@ async def app_uninstalled(
         db.close()
 
 
-# ==========================================
-# TESTING (DEV ONLY)
-# ==========================================
-
-@router.post("/test")
-async def test_webhook(request: Request):
+@router.post("/products/update")
+async def products_update(
+    request: Request,
+    x_shopify_hmac_sha256: str = Header(None)
+):
     """
-    Endpoint de test pour vérifier que les webhooks fonctionnent.
-    À SUPPRIMER en production.
+    Webhook appelé quand un produit est mis à jour.
+    Peut être utilisé pour mettre à jour le cache ou synchroniser les données.
     """
+    body = await request.body()
+    
+    if not verify_webhook_hmac(body, x_shopify_hmac_sha256):
+        raise HTTPException(status_code=401, detail="Invalid HMAC")
+    
     data = await request.json()
-    print(f"🧪 Test Webhook received: {data}")
-    return JSONResponse({"success": True, "echo": data})
+    shop_domain = data.get("shop_domain")
+    product_id = data.get("id")
+    
+    print(f"📦 Product Updated: {shop_domain} - Product: {product_id}")
+    
+    # TODO: Implémenter la logique de synchronisation si nécessaire
+    
+    return JSONResponse({"success": True})
 
 
 # ==========================================
@@ -277,3 +288,18 @@ async def billing_charge_activate(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
+
+
+# ==========================================
+# TESTING (DEV ONLY)
+# ==========================================
+
+@router.post("/test")
+async def test_webhook(request: Request):
+    """
+    Endpoint de test pour vérifier que les webhooks fonctionnent.
+    À SUPPRIMER en production.
+    """
+    data = await request.json()
+    print(f"🧪 Test Webhook received: {data}")
+    return JSONResponse({"success": True, "echo": data})

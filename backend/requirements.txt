@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 shopifyapi
 replicate
 requests
@@ -9,3 +9,5 @@ jinja2
 httpx
 sqlalchemy
 psycopg2-binary
+PyJWT
+cryptography

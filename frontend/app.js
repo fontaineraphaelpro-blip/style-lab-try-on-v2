@@ -3,10 +3,22 @@ document.addEventListener("DOMContentLoaded", function() {
     document.body.classList.add('loaded');
     document.body.style.opacity = "1";
 
+    // Récupérer le shop depuis plusieurs sources
     const params = new URLSearchParams(window.location.search);
     const mode = params.get('mode');
-    let shop = params.get('shop') || sessionStorage.getItem('shop');
+    let shop = params.get('shop') || 
+               sessionStorage.getItem('shop') ||
+               document.body.getAttribute('data-shop') ||
+               (window.Shopify && window.Shopify.shop);
     const autoProductImage = params.get('product_image');
+    
+    // Si on est dans une app embedded Shopify, utiliser App Bridge
+    if (window.shopify && window.shopify.config) {
+        const config = window.shopify.config;
+        if (config.apiKey) {
+            console.log("✅ App Bridge détecté");
+        }
+    }
 
     // === RÉCUPÉRATION DU SHOP EN MODE CLIENT ===
     if (mode === 'client' && !shop) {
@@ -66,8 +78,26 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
+    // Initialiser App Bridge si disponible
+    let shopifyApp = null;
+    if (window.shopify && window.shopify.config) {
+        try {
+            shopifyApp = window.shopify;
+            console.log("✅ App Bridge initialisé");
+        } catch (e) {
+            console.warn("⚠️  App Bridge non disponible:", e);
+        }
+    }
+
     async function getSessionToken() {
-        if (window.shopify && window.shopify.id) return await shopify.id.getToken();
+        try {
+            if (shopifyApp && shopifyApp.id) {
+                const token = await shopifyApp.id.getToken();
+                return token;
+            }
+        } catch (e) {
+            console.warn("⚠️  Impossible de récupérer le Session Token:", e);
+        }
         return null;
     }
 
@@ -75,14 +105,32 @@ document.addEventListener("DOMContentLoaded", function() {
         try {
             const token = await getSessionToken();
             const headers = options.headers || {};
-            if (token) headers['Authorization'] = `Bearer ${token}`;
-            const res = await fetch(url, { ...options, headers });
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            // Ajouter le shop dans les query params si disponible
+            if (shop && !url.includes('shop=')) {
+                const separator = '?' if '?' not in url else '&';
+                url = `${url}${separator}shop=${encodeURIComponent(shop)}`;
+            }
+            const res = await fetch(url, { 
+                ...options, 
+                headers,
+                mode: 'cors',
+                credentials: 'include'
+            });
             if (res.status === 401 && shop && mode !== 'client') { 
-                window.top.location.href = `/login?shop=${shop}`; 
+                // Rediriger vers login si non authentifié
+                if (window.top && window.top !== window) {
+                    window.top.location.href = `/login?shop=${shop}`;
+                } else {
+                    window.location.href = `/login?shop=${shop}`;
+                }
                 return null; 
             }
             return res;
         } catch (error) { 
+            console.error("❌ Fetch error:", error);
             throw error; 
         }
     }
@@ -402,18 +450,33 @@ document.addEventListener("DOMContentLoaded", function() {
             
             const fetchStartTime = Date.now();
             
-            // FETCH simplifié (pas besoin de mode: 'cors' avec le proxy)
+            // FETCH avec CORS et credentials
             let res;
             try {
-                res = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify(payload),
-                    cache: 'no-cache'
-                });
+                // Utiliser authenticatedFetch pour les requêtes admin
+                if (mode !== 'client') {
+                    res = await authenticatedFetch(apiUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    // Mode client (storefront) - fetch normal
+                    res = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(payload),
+                        mode: 'cors',
+                        credentials: 'include',
+                        cache: 'no-cache'
+                    });
+                }
                 console.log("✅ Fetch returned successfully");
             } catch (fetchError) {
                 console.error("❌ Fetch exception:", fetchError);

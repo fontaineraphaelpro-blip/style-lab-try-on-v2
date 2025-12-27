@@ -28,7 +28,7 @@ router = APIRouter()
 SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY")
 SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET")
 APP_URL = os.getenv("APP_URL", "https://style-lab-try-on-v2-production.up.railway.app")
-SCOPES = "write_products,read_products"
+SCOPES = "write_products,read_products,read_orders,write_orders"
 
 
 def verify_hmac(query_params: dict) -> bool:
@@ -241,6 +241,25 @@ async def oauth_callback(
             if db:
                 db.close()
                 print(f"🔒 Session DB fermée")
+        
+        # Enregistrer les webhooks automatiquement après l'installation
+        # (Fait après la fermeture de la DB pour éviter les problèmes de session)
+        try:
+            from routes.webhook_registration import register_all_webhooks
+            print(f"🔧 Enregistrement des webhooks pour {shop}...")
+            webhook_results = register_all_webhooks(shop, access_token)
+            successful_webhooks = sum(1 for v in webhook_results.values() if v)
+            print(f"✅ Webhooks enregistrés: {successful_webhooks}/{len(webhook_results)} réussis")
+            for topic, success in webhook_results.items():
+                if success:
+                    print(f"   ✅ {topic}")
+                else:
+                    print(f"   ❌ {topic} (échec)")
+        except Exception as webhook_error:
+            print(f"⚠️  Erreur lors de l'enregistrement des webhooks (non-critique): {webhook_error}")
+            import traceback
+            traceback.print_exc()
+            # Ne pas bloquer l'installation si les webhooks échouent
         
         # Rediriger vers l'app embedded
         # Pour une app embedded, Shopify redirige automatiquement vers application_url

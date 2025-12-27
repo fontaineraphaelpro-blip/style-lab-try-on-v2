@@ -8,7 +8,8 @@ application_url = "https://style-lab-try-on-v2-production.up.railway.app"
 embedded = true
 
 [access_scopes]
-scopes = "write_products,read_products"
+# Scopes nécessaires pour l'app
+scopes = "write_products,read_products,read_orders,write_orders"
 
 [auth]
 redirect_urls = [
@@ -30,16 +31,25 @@ prefix = "apps"
 api_version = "2025-01"
 
 [[webhooks.subscriptions]]
-topics = [
-  "app/uninstalled",
-  "products/update"
-]
-uri = "/webhooks/gdpr"
+topic = "app/uninstalled"
+uri = "/webhooks/app/uninstalled"
 
 [[webhooks.subscriptions]]
-compliance_topics = [
-  "customers/data_request",
-  "customers/redact",
-  "shop/redact"
-]
-uri = "/webhooks/gdpr"
+topic = "products/update"
+uri = "/webhooks/products/update"
+
+[[webhooks.subscriptions]]
+topic = "app_charges/activate"
+uri = "/webhooks/billing/charges/activate"
+
+[[webhooks.subscriptions]]
+compliance_topic = "customers/data_request"
+uri = "/webhooks/customers/data_request"
+
+[[webhooks.subscriptions]]
+compliance_topic = "customers/redact"
+uri = "/webhooks/customers/redact"
+
+[[webhooks.subscriptions]]
+compliance_topic = "shop/redact"
+uri = "/webhooks/shop/redact"

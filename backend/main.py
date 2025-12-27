@@ -75,6 +75,30 @@ async def lifespan(app: FastAPI):
     # Vérifier les credentials Shopify
     if not SHOPIFY_API_KEY or not SHOPIFY_API_SECRET:
         print("⚠️  WARNING: Shopify credentials missing")
+    else:
+        # Enregistrer les webhooks pour tous les shops actifs au démarrage (optionnel)
+        # Les webhooks sont normalement enregistrés lors de l'installation
+        if ENVIRONMENT == "production":
+            try:
+                from database import SessionLocal, Shop
+                from routes.webhook_registration import register_all_webhooks
+                
+                db = SessionLocal()
+                try:
+                    active_shops = db.query(Shop).filter(Shop.is_active == True).all()
+                    print(f"🔧 Vérification des webhooks pour {len(active_shops)} shops actifs...")
+                    
+                    for shop in active_shops:
+                        if shop.access_token:
+                            try:
+                                # Vérifier et enregistrer les webhooks manquants
+                                register_all_webhooks(shop.domain, shop.access_token)
+                            except Exception as e:
+                                print(f"⚠️  Erreur lors de l'enregistrement des webhooks pour {shop.domain}: {e}")
+                finally:
+                    db.close()
+            except Exception as e:
+                print(f"⚠️  Erreur lors de la vérification des webhooks: {e}")
     
     # Vérifier Replicate
     if not REPLICATE_TOKEN:
@@ -301,10 +325,11 @@ async def api_generate(request: Request):
     import time
     from routes.proxy import GenerateRequest
     from services.replicate_service import ReplicateService
-    from database import get_db, Shop, TryOnLog, RateLimit
+    from database import SessionLocal, Shop, TryOnLog, RateLimit
     from datetime import datetime
     from fastapi import HTTPException
     
+    db = None
     try:
         body = await request.json()
         shop_domain = body.get("shop")
@@ -317,86 +342,79 @@ async def api_generate(request: Request):
             shop_domain = f"{shop_domain}.myshopify.com"
         
         # Récupérer le shop
-        from database import SessionLocal
         db = SessionLocal()
+        shop_record = db.query(Shop).filter(Shop.domain == shop_domain).first()
         
-        try:
-            shop_record = db.query(Shop).filter(Shop.domain == shop_domain).first()
-            
-            if not shop_record:
-                raise HTTPException(status_code=404, detail="Shop not found")
-            
-            # Vérifier les crédits
-            if shop_record.credits < 1:
-                return JSONResponse(
-                    {"error": "Insufficient credits", "credits": 0},
-                    status_code=402
-                )
-            
-            # Préparer les images
-            if not body.get("person_image_base64"):
-                raise HTTPException(status_code=400, detail="Person image required")
-            
-            person_bytes = base64.b64decode(body.get("person_image_base64"))
-            person_file = io.BytesIO(person_bytes)
-            
-            garment_input = None
-            if body.get("clothing_file_base64"):
-                garment_bytes = base64.b64decode(body.get("clothing_file_base64"))
-                garment_input = io.BytesIO(garment_bytes)
-            elif body.get("clothing_url"):
-                garment_input = body.get("clothing_url")
-                if garment_input.startswith("//"):
-                    garment_input = "https:" + garment_input
-            else:
-                raise HTTPException(status_code=400, detail="No garment provided")
-            
-            start_time = time.time()
-            
-            # Générer le try-on
-            result_url = ReplicateService.generate_tryon(
-                person_image=person_file,
-                garment_image=garment_input,
-                category=body.get("category", "upper_body")
+        if not shop_record:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        
+        # Vérifier les crédits
+        if shop_record.credits < 1:
+            return JSONResponse(
+                {"error": "Insufficient credits", "credits": 0},
+                status_code=402
             )
-            
-            # Mettre à jour les stats
-            shop_record.credits -= 1
-            shop_record.total_tryons += 1
-            
-            latency_ms = int((time.time() - start_time) * 1000)
-            
-            client_ip = request.client.host
-            log = TryOnLog(
-                shop=shop_domain,
-                customer_ip=client_ip,
-                product_id=body.get("product_id"),
-                success=True,
-                latency_ms=latency_ms,
-                result_image_url=result_url
-            )
-            db.add(log)
-            db.commit()
-            
-            credits_remaining = shop_record.credits
-            
-            return {
-                "success": True,
-                "result_image_url": result_url,
-                "credits_remaining": credits_remaining
-            }
-        except HTTPException:
-            db.rollback()
-            raise
-        except Exception as e:
-            db.rollback()
-            raise e
-        finally:
-            db.close()
+        
+        # Préparer les images
+        if not body.get("person_image_base64"):
+            raise HTTPException(status_code=400, detail="Person image required")
+        
+        person_bytes = base64.b64decode(body.get("person_image_base64"))
+        person_file = io.BytesIO(person_bytes)
+        
+        garment_input = None
+        if body.get("clothing_file_base64"):
+            garment_bytes = base64.b64decode(body.get("clothing_file_base64"))
+            garment_input = io.BytesIO(garment_bytes)
+        elif body.get("clothing_url"):
+            garment_input = body.get("clothing_url")
+            if garment_input.startswith("//"):
+                garment_input = "https:" + garment_input
+        else:
+            raise HTTPException(status_code=400, detail="No garment provided")
+        
+        start_time = time.time()
+        
+        # Générer le try-on
+        result_url = ReplicateService.generate_tryon(
+            person_image=person_file,
+            garment_image=garment_input,
+            category=body.get("category", "upper_body")
+        )
+        
+        # Mettre à jour les stats
+        shop_record.credits -= 1
+        shop_record.total_tryons += 1
+        
+        latency_ms = int((time.time() - start_time) * 1000)
+        
+        client_ip = request.client.host
+        log = TryOnLog(
+            shop=shop_domain,
+            customer_ip=client_ip,
+            product_id=body.get("product_id"),
+            success=True,
+            latency_ms=latency_ms,
+            result_image_url=result_url
+        )
+        db.add(log)
+        db.commit()
+        
+        credits_remaining = shop_record.credits
+        
+        return JSONResponse({
+            "success": True,
+            "result_image_url": result_url,
+            "credits_remaining": credits_remaining
+        })
         
     except HTTPException as e:
+        if db:
+            db.rollback()
         raise e
     except Exception as e:
+        if db:
+            db.rollback()
         import traceback
         error_trace = traceback.format_exc()
         print(f"❌ Generate error: {e}")
@@ -410,6 +428,9 @@ async def api_generate(request: Request):
                 "details": error_trace if env == "development" else None
             }
         )
+    finally:
+        if db:
+            db.close()
 
 # Webhooks
 app.include_router(
@@ -444,7 +465,7 @@ async def serve_styles_css():
     return JSONResponse({"error": "File not found"}, status_code=404)
 
 @app.get("/", response_class=HTMLResponse)
-async def serve_index():
+async def serve_index(request: Request):
     """
     Sert index.html pour l'app embedded Shopify.
     """
@@ -453,6 +474,16 @@ async def serve_index():
         html_content = file_path.read_text(encoding="utf-8")
         # Remplacer {{ api_key }} par la vraie clé API
         html_content = html_content.replace("{{ api_key }}", SHOPIFY_API_KEY or "")
+        
+        # Extraire le shop depuis les query params pour l'injecter dans la page
+        shop = request.query_params.get("shop")
+        if shop:
+            # Injecter le shop dans le HTML pour que le JS puisse l'utiliser
+            html_content = html_content.replace(
+                "<body>",
+                f"<body data-shop=\"{shop}\">"
+            )
+        
         return HTMLResponse(content=html_content)
     return JSONResponse({"error": "Frontend not found"}, status_code=404)
 
