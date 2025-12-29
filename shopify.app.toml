@@ -1,0 +1,22 @@
+# This file stores configurations for your Shopify app.
+
+# Scopes nécessaires pour l'app try-on
+scopes = "write_products,read_products,read_orders,write_orders"
+
+# App Proxy pour le widget storefront
+[app_proxy]
+url = "https://your-app-url.com"
+subpath = "tryon"
+prefix = "apps"
+
+# Webhooks
+[webhooks]
+api_version = "2025-01"
+
+[[webhooks.subscriptions]]
+topic = "app/uninstalled"
+uri = "/api/webhooks"
+
+[[webhooks.subscriptions]]
+topic = "app_charges/activate"
+uri = "/api/webhooks"
